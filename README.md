@@ -21,7 +21,7 @@ JunctionCounts - a pipeline developed in the Sanfordlab - was run for event dete
 |Supp Fig 1a|manhattan_distance_dist.Rmd| check |
 |Supp Fig 1b|map_stats.R| check |
 |Supp Fig 1c|genebody_coverage_plot.R | check |
-|Supp Fig 1d| | missing |
+|Supp Fig 1d|remap_fraction_correlation.Rmd | check |
 |Supp Table 1| supp_tables.Rmd| check |
 |Supp Table 8-11 | make_RBP_tables.Rmd | check |
 
