@@ -1,0 +1,252 @@
+---
+title: "remap_sym_heatmaps_fig.Rmd"
+author: "juphilip"
+date: "8/17/2023"
+output: html_document
+---
+
+Short version of remap_sym_heatmaps containing only code relevant for figures
+```{r setup, include=FALSE}
+rm(list=ls(all=TRUE))
+library(dplyr)
+library(stringr)
+library(purrr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
+library(RColorBrewer)
+library(reshape2)
+library(pheatmap)
+library(tibble)
+library(matrixStats)
+library(grid)
+library(gridExtra)
+library(ggplot2)
+#install.packages("seriation", repos='http://cran.us.r-project.org')
+library(seriation)
+#install.packages("cba", repos='http://cran.us.r-project.org')
+library(cba)
+#install.packages("dendsort", repos='http://cran.us.r-project.org')
+library(dendsort)
+library(cowplot)
+library(RColorBrewer)
+library(reshape2)
+
+theme_set(theme_cowplot())
+
+num_events <- 550
+```
+
+```{r normalize function}
+# prob not needed for this
+normalize <- function(x){
+  if(rowMins(x) == rowMaxs(x)){
+    norm <- 1/ncol(x)
+  } else{
+    norm <- (x - rowMins(x))/(rowMaxs(x) - rowMins(x))
+  }
+  return(norm)
+}
+
+# reorder correlation matrix function
+reorder_cormat <- function(cormat){
+# Use correlation between variables as distance
+dd <- as.dist((1-cormat)/2)
+hc <- hclust(dd)
+cormat <-cormat[hc$order, hc$order]
+}
+```
+
+```{r load data}
+all_events_psi_restricted <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_species_junctioncounts_restricted.tsv", header = TRUE, stringsAsFactors = FALSE)
+
+all_distance_species <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_distances.tsv", header = TRUE, stringsAsFactors = FALSE) %>% 
+  filter(constant_vars == "fraction")
+
+all_dpsi_fraction <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_dpsi.tsv", header = TRUE, stringsAsFactors = FALSE) %>% 
+  filter(comparison_factor == "fraction") %>% 
+  filter(comparison %in% c("1_2","2_3","3_4","4_5"))
+```
+
+```{r annotation colors}
+sample_names <- c("hips_cyto_jd952","hips_cyto_jd958","hips_mono_jd954","hips_mono_jd960","hips_poll_jd955",
+                  "hips_poll_jd961","hips_polm_jd956","hips_polm_jd962","hips_polh_jd957","hips_polh_jd963",
+                  "cips_cyto_jd940","cips_cyto_jd946","cips_mono_jd942","cips_mono_jd948","cips_poll_jd943",
+                  "cips_poll_jd949","cips_polm_jd944","cips_polm_jd950","cips_polh_jd945","cips_polh_jd951",
+                  "oips_cyto_jd928","oips_cyto_jd934","oips_mono_jd930","oips_mono_jd936","oips_poll_jd931",
+                  "oips_poll_jd937","oips_polm_jd932","oips_polm_jd938","oips_polh_jd933","oips_polh_jd939")
+
+annotation_df <- data.frame(fraction = str_split(sample_names, "_", simplify = TRUE)[,2], species = rep(c("human","chimpanzee","orangutan"), each=10))
+rownames(annotation_df) <- sample_names
+
+species <- c("#66c2a5","#fc8d62","#8da0cb")
+fraction <- c("#f1eef6","#bdc9e1","#74a9cf","#2b8cbe","#045a8d")
+names(species) <- c("human","chimpanzee","orangutan")
+names(fraction) <- c("cyto","mono","poll","polm","polh")
+anno_colors <- list(fraction=fraction, species=species)
+
+Breaks <- seq(0,1, length = 100)
+
+```
+
+```{r astc in all three}
+astc_in_all <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_in_all.txt", header = FALSE, stringsAsFactors = FALSE)
+
+astc_in_all_inner_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_in_all$V1) %>% 
+  group_by(event_id) %>% 
+  mutate(sum_dist = sum(dist), sum_inner_dist = sum(inner_dist)) %>% 
+  select(event_id, sum_dist, sum_inner_dist) %>% 
+  unique()
+
+astc_in_all_inner_dist_top_10p <- astc_in_all_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  head(n=36)
+
+astc_in_all_inner_dist_bottom_10p <- astc_in_all_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  tail(n=36)
+
+astc_in_all_inner_dist_top_20p <- astc_in_all_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  head(n=72)
+
+astc_in_all_inner_dist_bottom_20p <- astc_in_all_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  tail(n=72)
+
+
+astc_in_all_inner_dist_top_50p <- astc_in_all_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  head(n=160)
+
+astc_in_all_inner_dist_bottom_50p <- astc_in_all_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  tail(n=160)
+
+```
+
+```{r as in all three}
+as_human <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/as_events/as_events_human.txt", header = FALSE, stringsAsFactors = FALSE)
+
+as_chimp <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/as_events/as_events_chimp.txt", header = FALSE, stringsAsFactors = FALSE)
+
+as_orang <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/as_events/as_events_orang.txt", header = FALSE, stringsAsFactors = FALSE)
+
+as_in_all <- intersect(as_human, as_chimp) %>% 
+  intersect(as_orang)
+
+
+```
+
+
+```{r make wide tables for heatmaps}
+all_psi_hips <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "hips")) %>% 
+  dcast(event_id ~ sample_name, value.var = "avg_psi") %>% 
+  select(c(event_id, hips_cyto_jd952, hips_cyto_jd958, hips_mono_jd954, hips_mono_jd960,
+         hips_poll_jd955, hips_poll_jd961, hips_polm_jd956, hips_polm_jd962, hips_polh_jd957,
+         hips_polh_jd963))
+  
+all_psi_cips <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "cips")) %>% 
+  dcast(event_id ~ sample_name, value.var = "avg_psi") %>% 
+  select(c(event_id, cips_cyto_jd940, cips_cyto_jd946, cips_mono_jd942, cips_mono_jd948,
+           cips_poll_jd943, cips_poll_jd949, cips_polm_jd944, cips_polm_jd950, cips_polh_jd945,
+           cips_polh_jd951))
+
+all_psi_oips <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "oips")) %>% 
+  dcast(event_id ~ sample_name, value.var = "avg_psi") %>% 
+  select(c(event_id, oips_cyto_jd928, oips_cyto_jd934, oips_mono_jd930, oips_mono_jd936,
+           oips_poll_jd931, oips_poll_jd937, oips_polm_jd932, oips_polm_jd938,
+           oips_polh_jd933, oips_polh_jd939))
+```
+
+```{r test correlation heatmap of all events}
+all_psi_three_species <- all_psi_hips %>% 
+  inner_join(all_psi_cips, by = "event_id") %>% 
+  inner_join(all_psi_oips, by = "event_id") %>% 
+  column_to_rownames("event_id") %>% 
+  na.omit()
+
+cormat <- round(cor(all_psi_three_species, method = "spearman"),2)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/sym_heatmaps/all_events_spearman_1.pdf", height = 7, width = 8)
+# colors ranging from 0 to 1
+# clustering happening
+pheatmap(cormat, breaks = Breaks, annotation_col = annotation_df, 
+         annotation_row = annotation_df, annotation_colors = anno_colors, 
+         cellwidth = 10, cellheight = 10,
+         main = "all events")
+#dev.off()
+```
+
+```{r astc in all - one heatmap}
+all_psi_three_species_all <- all_psi_hips %>% 
+  inner_join(all_psi_cips, by = "event_id") %>% 
+  inner_join(all_psi_oips, by = "event_id") %>% 
+  filter(event_id %in% astc_in_all_inner_dist$event_id) %>% 
+  column_to_rownames("event_id") %>% 
+  na.omit()
+
+cormat_all <- abs(cor(all_psi_three_species_all, method = "spearman"))
+
+
+Breaks <- seq(0, 1, length = 100)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/sym_heatmaps/astc_in_all_all_events.pdf", height = 7, width = 8)
+# clustering
+pheatmap(cormat_all, breaks = Breaks, annotation_col = annotation_df, 
+         annotation_row = annotation_df, annotation_colors = anno_colors, 
+         cellwidth = 10, cellheight = 10,
+         main = "all events")
+#dev.off()
+```
+
+```{r astc in all top and bottom 10p heatmap}
+all_psi_three_species_top <- all_psi_hips %>% 
+  inner_join(all_psi_cips, by = "event_id") %>% 
+  inner_join(all_psi_oips, by = "event_id") %>% 
+  filter(event_id %in% astc_in_all_inner_dist_top_10p$event_id) %>% 
+  column_to_rownames("event_id") %>% 
+  na.omit()
+
+all_psi_three_species_bot <- all_psi_hips %>% 
+  inner_join(all_psi_cips, by = "event_id") %>% 
+  inner_join(all_psi_oips, by = "event_id") %>% 
+  filter(event_id %in% astc_in_all_inner_dist_bottom_10p$event_id) %>% 
+  column_to_rownames("event_id") %>% 
+  na.omit()
+
+cormat_top <- (cor(all_psi_three_species_top, method = "spearman"))
+cormat_bot <- (cor(all_psi_three_species_bot, method = "spearman"))
+
+Breaks <- seq(0, 1, length = 100)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/sym_heatmaps/astc_in_all_species_specific_10p_1.pdf", height = 7, width = 8)
+# clustering
+pheatmap(cormat_top, breaks = Breaks, annotation_col = annotation_df, 
+         annotation_row = annotation_df, annotation_colors = anno_colors, 
+         cellwidth = 10, cellheight = 10,
+         main = "species-specific")
+#dev.off()
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/sym_heatmaps/astc_in_all_conserved_10p_1.pdf", height = 7, width = 8)
+# clustering
+pheatmap(cormat_bot, breaks = Breaks, annotation_col = annotation_df, 
+         annotation_row = annotation_df, annotation_colors = anno_colors, 
+         cellwidth = 10, cellheight = 10,
+         main = "conserved")
+#dev.off()
+
+
+```
+
