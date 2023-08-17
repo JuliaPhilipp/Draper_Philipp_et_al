@@ -1,0 +1,367 @@
+---
+title: "remap_PCA"
+author: "juphilip"
+date: "4/6/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+Mostly testing for correlation in terms of PSI between replicates
+
+
+```{r}
+rm(list = ls())
+library(devtools)
+install_github("vqv/ggbiplot")
+library(ggbiplot)
+library(DESeq2)
+library(stringr)
+
+```
+
+```{r load data}
+all_events_psi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_species_junctioncounts_restricted.tsv", header = TRUE, stringsAsFactors = FALSE)
+
+all_condition_psi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_dpsi.tsv", header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r split all_events_psi by species and replicate}
+## divide by species
+all_psi_human <- all_events_psi %>% 
+  filter(str_detect(sample_name, "hips"))
+
+
+all_psi_chimp <- all_events_psi %>% 
+  filter(str_detect(sample_name,"cips"))
+
+
+all_psi_orang <- all_events_psi %>% 
+  filter(str_detect(sample_name, "oips"))
+
+## divide by replicates
+# human
+psi_human <- cbind(all_psi_human[all_psi_human$sample == "hips_cyto_jd952", c(2,3,6)], all_psi_human[all_psi_human$sample == "hips_cyto_jd958", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_mono_jd954", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_mono_jd960", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_poll_jd955", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_poll_jd961", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_polm_jd956", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_polm_jd962", "avg_psi"],
+all_psi_human[all_psi_human$sample == "hips_polh_jd957", "avg_psi"], all_psi_human[all_psi_human$sample == "hips_polh_jd963", "avg_psi"]) %>% 
+  filter(complete.cases(.))
+
+colnames(psi_human) <- c("event_id","event_type","cyto1","cyto2","mono1","mono2","poll1","poll2","polm1","polm2","polh1","polh2")
+
+# chimpanzee
+psi_chimp <- cbind(all_psi_chimp[all_psi_chimp$sample == "cips_cyto_jd940", c(2,3,6)], all_psi_chimp[all_psi_chimp$sample == "cips_cyto_jd946", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_mono_jd942", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_mono_jd948", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_poll_jd943", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_poll_jd949", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_polm_jd944", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_polm_jd950", "avg_psi"],
+all_psi_chimp[all_psi_chimp$sample == "cips_polh_jd945", "avg_psi"], all_psi_chimp[all_psi_chimp$sample == "cips_polh_jd951", "avg_psi"]) %>% 
+  filter(complete.cases(.))
+
+colnames(psi_chimp) <- c("event_id","event_type","cyto1_c","untr2_c","mono1_c","mono2_c","poll1_c","poll2_c","polm1_c","polm2_c","polh1_c","polh2_c")
+
+# orangutan
+psi_orang <- cbind(all_psi_orang[all_psi_orang$sample == "oips_cyto_jd928", c(2,3,6)], all_psi_orang[all_psi_orang$sample == "oips_cyto_jd934", "avg_psi"],  all_psi_orang[all_psi_orang$sample == "oips_mono_jd930", "avg_psi"], all_psi_orang[all_psi_orang$sample == "oips_mono_jd936", "avg_psi"], all_psi_orang[all_psi_orang$sample == "oips_poll_jd931", "avg_psi"], all_psi_orang[all_psi_orang$sample == "oips_poll_jd937", "avg_psi"], all_psi_orang[all_psi_orang$sample == "oips_polm_jd932", "avg_psi"], all_psi_orang[all_psi_orang$sample == "oips_polm_jd938", "avg_psi"],
+all_psi_orang[all_psi_orang$sample == "oips_polh_jd933", "avg_psi"], all_psi_orang[all_psi_orang$sample == "oips_polh_jd939", "avg_psi"]) %>% 
+  filter(complete.cases(.))
+
+colnames(psi_orang) <- c("event_id","event_type","cyto1_o","cyto2_o","mono1_o","mono2_o","poll1_o","poll2_o","polm1_o","polm2_o","polh1_o","polh2_o")
+```
+
+```{r}
+human.pca <- prcomp((t(psi_human[,c(3:ncol(psi_human))])), center = TRUE,scale. = TRUE)
+
+human.pca <- prcomp((t(psi_human[,c(3:ncol(psi_human))])), center = TRUE,scale. = F)
+
+which(apply(t(psi_human[,c(3:ncol(psi_human))]), 2, var)==0)
+summary(human.pca)
+
+test <- t(psi_human[,c(3:ncol(psi_human))])
+
+library(ggplot2)
+
+# create data frame with scores
+scores = as.data.frame(human.pca$x)
+
+# plot of observations
+ggplot(data = scores, aes(x = PC1, y = PC2) +
+  geom_hline(yintercept = 0, colour = "gray65") +
+  geom_vline(xintercept = 0, colour = "gray65") +
+  geom_text(colour = "tomato", alpha = 0.8, size = 4) +
+  ggtitle("PCA plot of USA States - Crime Rates"))
+
+all_psi <- psi_human %>% 
+  left_join(psi_chimp, by="event_id") %>% 
+  left_join(psi_orang, by="event_id") %>% 
+  select(-c("symbol.x","event_id","symbol.y","event_type.y","symbol","event_type","event_type.x")) %>% 
+  na.omit()
+all.pca <- prcomp(t(all_psi))
+
+scores = as.data.frame(all.pca$x)
+
+scores = as.data.frame(cbind(as.numeric(all.pca$x[,1]), as.numeric(all.pca$x[,2])))
+scores$V3 <-rep(c("human","chimpanzee","orangutan"), each=12)
+scores$V4 <-rep(c("cyto","cyto","untr","untr","mono","mono","poll","poll","polm","polm","polh","polh"))
+
+
+#as.numeric(rep(c("2","3","1"), each=12)), rep(c("0","0","1","1","2","2","3","3","4","4","5","5"),times=3)))
+colnames(scores) <- c("PC1","PC2", "species", "fractions")
+# plot of observations
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/run11/pca_psi.pdf")
+ggplot(data = scores, aes(x = PC1, y = PC2, color=fractions, shape=species)) +
+  geom_hline(yintercept = 0, colour = "gray65") +
+  geom_vline(xintercept = 0, colour = "gray65") +
+  geom_point(size=3, alpha=0.8)
+  #geom_label(aes(label=rownames(t(all_psi)))) +
+  #geom_text(colour = "tomato", alpha = 0.8, size = 4, aes(label=rownames(t(all_psi))))
+#dev.off()
+
+```
+
+```{r}
+circle <- function(center = c(0, 0), npoints = 100) {
+    r = 1
+    tt = seq(0, 2 * pi, length = npoints)
+    xx = center[1] + r * cos(tt)
+    yy = center[1] + r * sin(tt)
+    return(data.frame(x = xx, y = yy))
+}
+corcir = circle(c(0, 0), npoints = 100)
+
+# create data frame with correlations between variables and PCs
+correlations = as.data.frame(cor(psi_human[,4:ncol(psi_human)], human.pca$x))
+
+# data frame with arrows coordinates
+arrows = data.frame(x1 = c(0, 0, 0, 0), y1 = c(0, 0, 0, 0), x2 = correlations$PC1, 
+    y2 = correlations$PC2)
+
+# geom_path will do open circles
+ggplot() + geom_path(data = corcir, aes(x = x, y = y), colour = "gray65") + 
+    geom_segment(data = arrows, aes(x = x1, y = y1, xend = x2, yend = y2), colour = "gray65") + 
+    geom_text(data = correlations, aes(x = PC1, y = PC2, label = rownames(correlations))) + 
+    geom_hline(yintercept = 0, colour = "gray65") + geom_vline(xintercept = 0, 
+    colour = "gray65") + xlim(-1.1, 1.1) + ylim(-1.1, 1.1) + labs(x = "pc1 aixs", 
+    y = "pc2 axis") + ggtitle("Circle of correlations")
+```
+
+```{r}
+library(DESeq2)
+all_psi <- psi_human %>% 
+  left_join(psi_chimp, by="event_id") %>% 
+  left_join(psi_orang, by="event_id") %>% 
+  select(-c("symbol.x","event_id","symbol.y","event_type.y","symbol","event_type","event_type.x")) %>% 
+  na.omit()
+
+
+colData <- data.frame(colnames(all_psi),subjects=rep(c("human","chimp","orang"), each=12), treat=rep(c("cyto1","cyto2","untr1","untr2","mono1","mono2","poll1","poll2","polm1","polm2","polh1","polh2"),times=3), row.names=1)
+dds <- DESeqDataSetFromMatrix(countData = integer(all_psi), colData = colData, design = ~ subjects + treat)
+design(dds) <- formula(~ subjects + treat)
+dds <- DESeq(dds)
+
+rld <- rlog(dds)
+data <- plotPCA(rld, intgroup=c("treat", "subjects"), returnData=TRUE)
+percentVar <- round(100 * attr(data, "percentVar"))
+
+plotPCA(psi_human[,4:ncol(psi_human)])
+```
+
+```{r correlation between replicates}
+library(cowplot)
+plot(psi_human$cyto1, psi_human$cyto2)
+plot(psi_human$untr1, psi_human$untr2)
+plot(psi_human$mono1, psi_human$mono2)
+
+
+
+
+rsq <- function (x, y) cor(x, y) ^ 2
+A.rsq <- rsq(psi_human$cyto1, psi_human$cyto2)
+B.rsq <- rsq(psi_human$mono1, psi_human$mono2)
+C.rsq <- rsq(psi_human$poll1, psi_human$poll2)
+D.rsq <- rsq(psi_human$polm1, psi_human$polm2)
+E.rsq <- rsq(psi_human$polh1, psi_human$polh2)
+      
+A<- ggplot(psi_human, aes(x=cyto1, y=cyto2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(A.rsq,3))))
+
+B<- ggplot(psi_human, aes(x=mono1, y=mono2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(B.rsq,3))))
+
+C <- ggplot(psi_human, aes(x=poll1, y=poll2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(C.rsq,3))))
+
+D<- ggplot(psi_human, aes(x=polm1, y=polm2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(D.rsq,3))))
+
+E<- ggplot(psi_human, aes(x=polh1, y=polh2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(E.rsq,3))))
+
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/fraction_correlation_psi.pdf", height = 7, width = 7)
+plot_grid(A,B,C,D,E, labels = "AUTO", nrow=2, ncol=3)
+dev.off()
+
+
+```
+
+```{r chimp correlation}
+colnames(psi_chimp) <- c("event_id","event_type","cyto1","cyto2","mono1","mono2","poll1","poll2","polm1","polm2","polh1","polh2")
+
+
+A.rsq <- rsq(psi_chimp$cyto1, psi_chimp$cyto2)
+C.rsq <- rsq(psi_chimp$mono1, psi_chimp$mono2)
+D.rsq <- rsq(psi_chimp$poll1, psi_chimp$poll2)
+E.rsq <- rsq(psi_chimp$polm1, psi_chimp$polm2)
+G.rsq <- rsq(psi_chimp$polh1, psi_chimp$polh2)
+
+A<- ggplot(psi_chimp, aes(x=cyto1, y=cyto2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(A.rsq,3))))
+
+C<- ggplot(psi_chimp, aes(x=mono1, y=mono2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(C.rsq,3))))
+
+D <- ggplot(psi_chimp, aes(x=poll1, y=poll2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(D.rsq,3))))
+
+E<- ggplot(psi_chimp, aes(x=polm1, y=polm2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(E.rsq,3))))
+
+G <- ggplot(psi_chimp, aes(x=polh1, y=polh2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(G.rsq,3))))
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020//fraction_correlation_psi_chimp.pdf", height = 7, width = 7)
+plot_grid(A,C,D,E,G, labels = "AUTO", nrow=2, ncol=3)
+dev.off()
+```
+
+
+```{r orang correlation}
+colnames(psi_orang) <- c("event_id","event_type","cyto1","cyto2","mono1","mono2","poll1","poll2","polm1","polm2","polh1","polh2")
+
+
+A.rsq <- rsq(psi_orang$cyto1, psi_orang$cyto2)
+C.rsq <- rsq(psi_orang$mono1, psi_orang$mono2)
+D.rsq <- rsq(psi_orang$poll1, psi_orang$poll2)
+E.rsq <- rsq(psi_orang$polm1, psi_orang$polm2)
+G.rsq <- rsq(psi_orang$polh1, psi_orang$polh2)
+
+A<- ggplot(psi_orang, aes(x=cyto1, y=cyto2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(A.rsq,3))))
+
+
+C<- ggplot(psi_orang, aes(x=mono1, y=mono2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(C.rsq,3))))
+
+D <- ggplot(psi_orang, aes(x=poll1, y=poll2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(D.rsq,3))))
+
+E<- ggplot(psi_orang, aes(x=polm1, y=polm2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(E.rsq,3))))
+
+G <- ggplot(psi_orang, aes(x=polh1, y=polh2)) +
+  geom_point() +
+  geom_smooth(method='lm',formula=y~x) +
+  ggtitle(as.expression(paste("R^2",round(G.rsq,3))))
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/fraction_correlation_psi_orang.pdf", height = 7, width = 7)
+
+plot_grid(A,C,D,E,G, labels = "AUTO", nrow=2, ncol=3)
+dev.off()
+```
+
+```{r make heatmaps for correlation scores}
+library(corrplot)
+library("Hmisc")
+res_human <- cor(psi_human[,c(3:ncol(psi_human))])
+res_chimp <- cor(psi_chimp[,c(3:ncol(psi_chimp))])
+colnames(res_chimp) <- colnames(res_human)
+rownames(res_chimp) <- rownames(res_human)
+res_orang <- cor(psi_orang[,c(3:ncol(psi_orang))])
+colnames(res_orang) <- colnames(res_human)
+rownames(res_orang) <- rownames(res_human)
+
+res2_human <- cor(psi_human[,c(3:ncol(psi_human))])*cor(psi_human[,c(3:ncol(psi_human))])
+
+res2_chimp <- cor(psi_chimp[,c(3:ncol(psi_chimp))])*cor(psi_chimp[,c(3:ncol(psi_chimp))])
+colnames(res2_chimp) <- colnames(res2_human)
+rownames(res2_chimp) <- colnames(res2_human)
+res2_orang <- cor(psi_orang[,c(3:ncol(psi_orang))])*cor(psi_orang[,c(3:ncol(psi_orang))])
+colnames(res2_orang) <- colnames(res2_human)
+rownames(res2_orang) <- colnames(res2_human)
+res2 <- rcorr(as.matrix(psi_human[,c(3:ncol(psi_human))]))
+corrplot(res2, type = "lower", col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100))
+
+library(gridExtra)
+Breaks <- seq(min(c(res_human, res_chimp, res_orang)), max(c(res_human, res_chimp, res_orang)), length = 100)
+plot_list <- list()
+plot1 <- pheatmap(res_human, col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100), symm = TRUE, cluster_rows = FALSE, cluster_cols = FALSE, main = "human", breaks = Breaks)
+plot_list[[1]] <- plot1[[4]]
+
+plot2 <- pheatmap(res_chimp, col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100), symm = TRUE, cluster_rows = FALSE, cluster_cols = FALSE, main = "chimpanzee", breaks = Breaks)
+
+plot_list[[2]] <- plot2[[4]]
+
+plot3 <- pheatmap(res_orang, col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100), symm = TRUE, cluster_rows = FALSE, cluster_cols = FALSE, main = "orangutan", breaks = Breaks)
+
+plot_list[[3]] <- plot3[[4]]
+g <- grid.arrange(arrangeGrob(grobs= plot_list,ncol=3))
+ggsave("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/all_species_replicate_cor_r.pdf",g, width = 14, height = 4)
+
+
+
+Breaks_2 <- seq(min(c(res2_human, res2_chimp, res2_orang)), max(c(res2_human, res2_chimp, res2_orang)), length = 100)
+plot_list <- list()
+plot1 <-pheatmap(res2_human, col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100), symm = TRUE, cluster_rows = FALSE, cluster_cols = FALSE, main = "human", breaks = Breaks_2)
+plot_list[[1]] <- plot1[[4]]
+
+plot2 <- pheatmap(res2_chimp, col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100), symm = TRUE, cluster_rows = FALSE, cluster_cols = FALSE, main = "chimpanzee", breaks = Breaks_2)
+plot_list[[2]] <- plot2[[4]]
+
+plot3 <- pheatmap(res2_orang, col = colorRampPalette(rev(brewer.pal(n = 7, name =
+  "RdYlBu")))(100), cluster_rows = FALSE, cluster_cols = FALSE, main="orangutan", breaks = Breaks_2)
+plot_list[[3]] <- plot3[[4]]
+
+g <- grid.arrange(arrangeGrob(grobs= plot_list,ncol=3))
+ggsave("~/Documents/05_results/01_primates/figures/all_species_replicate_cor_r_squared.pdf",g, width = 14, height = 4)
+
+
+o = rownames(res_human)
+hc = hclust(as.dist(1 - res_human))
+mat = res_human[hc$order, hc$order]
+mat[lower.tri(mat)] = NA
+mat = mat[o, o]
+
+pheatmap(mat, cluster_col = hc, cluster_row = hc)
+```
+
