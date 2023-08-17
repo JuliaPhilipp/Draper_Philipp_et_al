@@ -1,0 +1,736 @@
+---
+title: "filter_for_ASTC_events"
+author: "juphilip"
+date: "3/16/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# What's happening
+Remapped the human, orang and chimp data to more recent gene models
+now redoing the ASTC filtering
+
+```{r setup, include=FALSE}
+rm(list=ls(all=TRUE))
+library(dplyr)
+library(stringr)
+library(purrr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
+library(RColorBrewer)
+library(eulerr)
+
+source("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/Draper_Philipp_et_al/filter_funs.R")
+
+theme_set(theme_cowplot())
+
+input_dir <- "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/"
+output_dir <- "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/"
+
+
+all_events_psi_restricted <- read.delim(paste0(input_dir, "all_species_junctioncounts_restricted.tsv"), header = TRUE, stringsAsFactors = FALSE)
+
+all_dpsi_fraction <- read.delim(paste0(input_dir, "all_dpsi.tsv"), header = TRUE, stringsAsFactors = FALSE) %>% 
+  filter(comparison_factor == "fraction") %>% 
+  filter(comparison %in% c("1_2","2_3","3_4","4_5"))
+
+name_conversion <- read.delim(paste0(input_dir, "final_original_name.tsv"), header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r ASTC species specific filter}
+all_astc_psi_hips <- filter_ASTC(all_events_psi_restricted, all_dpsi_fraction, "human")
+
+all_astc_psi_cips <- filter_ASTC(all_events_psi_restricted, all_dpsi_fraction, "chimpanzee")
+
+all_astc_psi_oips <- filter_ASTC(all_events_psi_restricted, all_dpsi_fraction, "orangutan")
+
+# combine individually identified ASTC events
+all_astc_combined <- unique(c(all_astc_psi_hips$event_id, all_astc_psi_cips$event_id, all_astc_psi_oips$event_id))
+
+```
+
+```{r write ASTC output}
+write.table(unique(all_astc_psi_hips$event_id), file=paste0(output_dir, "astc_events/astc_events_human.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(all_astc_psi_cips$event_id), file= paste0(output_dir, "astc_events/astc_events_chimp.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(all_astc_psi_oips$event_id), file= paste0(output_dir, "astc_events/astc_events_orang.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(all_astc_combined), file =paste0(output_dir, "astc_events/astc_in_at_least_one_species.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep = "\t")
+
+```
+
+```{r filter for AS events}
+AS_only_human_test <- filter_AS(all_events_psi_restricted, all_dpsi_fraction, "human")
+AS_only_human_strict <- filter_AS_strict(all_events_psi_restricted, all_dpsi_fraction, "human")
+
+AS_only_chimp_test <- filter_AS(all_events_psi_restricted, all_dpsi_fraction, "chimpanzee")
+AS_only_chimp_strict <- filter_AS_strict(all_events_psi_restricted, all_dpsi_fraction, "chimpanzee")
+
+AS_only_orang <- filter_AS(all_events_psi_restricted, all_dpsi_fraction, "orangutan")
+AS_only_orang_strict <- filter_AS_strict(all_events_psi_restricted, all_dpsi_fraction, "orangutan")
+
+```
+
+```{r write out AS tables}
+write.table(unique(AS_only_human$event_id), file= paste0(output_dir, "as_events/as_events_human.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(AS_only_human_strict$event_id), file= paste0(output_dir, "as_events/as_events_human_strict.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(AS_only_chimp$event_id), file= paste0(output_dir, "as_events/as_events_chimp.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(AS_only_chimp_strict$event_id), file= paste0(output_dir, "as_events/as_events_chimp_strict.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(AS_only_orang$event_id), file= paste0(output_dir, "as_events/as_events_orang.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+write.table(unique(AS_only_orang_strict$event_id), file= paste0(output_dir, "as_events/as_events_orang_strict.txt"), row.names = FALSE, col.names = FALSE, quote = FALSE, sep ="\t")
+
+```
+
+```{r load NMD information}
+human_nmd_table <- read.delim(paste0(input_dir, "human_out/event_nmd_nsd_status.tsv"), header = TRUE, stringsAsFactors = FALSE)
+
+chimp_nmd_table <- read.delim(paste0(input_dir, "chimp_out/event_nmd_nsd_status.tsv"), header = TRUE, stringsAsFactors = FALSE)
+
+orang_nmd_table <- read.delim(paste0(input_dir, "orang_out/event_nmd_nsd_status.tsv"), header = TRUE, stringsAsFactors = FALSE)
+```
+
+```{r filter NMD tables and annotate for final name}
+# human filtering
+human_always_nmd <- filter_always_NMD(human_nmd_table, name_conversion, "human")
+human_nmd_switch <- filter_switch_NMD(human_nmd_table, name_conversion, "human")
+human_never_nmd <- filter_never_NMD(human_nmd_table, name_conversion, "human")
+
+# chimpanzee
+chimp_always_nmd <- filter_always_NMD(chimp_nmd_table, name_conversion, "chimpanzee")
+chimp_nmd_switch <- filter_switch_NMD(chimp_nmd_table, name_conversion, "chimpanzee")
+chimp_never_nmd <- filter_never_NMD(chimp_nmd_table, name_conversion, "chimpanzee")
+
+# orangutan
+orang_always_nmd <- filter_always_NMD(orang_nmd_table, name_conversion, "orangutan")
+orang_nmd_switch <- filter_switch_NMD(orang_nmd_table, name_conversion, "orangutan")
+orang_never_nmd <- filter_never_NMD(orang_nmd_table, name_conversion, "orangutan")
+```
+
+
+```{r prepare for ASTC vs AS bargraph}
+#ASTC vs AS
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp4 <- AS_only_human %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "AS") %>% 
+  data.frame()
+
+tmp5 <- AS_only_chimp %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "AS") %>% 
+  data.frame()
+
+tmp6 <- AS_only_orang %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "AS") %>% 
+  data.frame()
+
+ASTC_AS_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("ASTC","AS")))
+```
+
+```{r AS vs ASTC bargraph}
+ggplot(ASTC_AS_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_brewer(palette = "RdYlBu", name = "event type")
+
+ggplot(ASTC_AS_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_manual(name = "eventtype", values = c("#d7191c","#ffffbf"))
+```
+
+```{r AS strict vs ASTC prep}
+#ASTC vs AS
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp4 <- AS_only_human_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "AS") %>% 
+  data.frame()
+
+tmp5 <- AS_only_chimp_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "AS") %>% 
+  data.frame()
+
+tmp6 <- AS_only_orang_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "AS") %>% 
+  data.frame()
+
+ASTC_AS_strict_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("ASTC","AS")))
+```
+
+```{r ASstrict vs ASTC barplot}
+ggplot(ASTC_AS_strict_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_brewer(palette = "RdYlBu", name = "event type")
+
+ggplot(ASTC_AS_strict_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_manual(name = "eventtype", values = c("#d7191c","#ffffbf"))
+```
+
+```{r prepare for barplot with AS strict and not stricts vs ASTC}
+#ASTC vs AS
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = "ASTC")
+
+tmp4 <- AS_only_human %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% AS_only_human_strict$event_id ~ "AS_strict", TRUE ~ "AS")) %>% 
+  data.frame()
+
+tmp5 <- AS_only_chimp %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% AS_only_chimp_strict$event_id ~ "AS_strict", TRUE ~ "AS")) %>%
+  data.frame()
+
+tmp6 <- AS_only_orang %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% AS_only_orang_strict$event_id ~ "AS_strict", TRUE ~ "AS")) %>%
+  data.frame()
+
+ASTC_AS_ASstrict_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("ASTC","AS","AS_strict")))
+```
+
+```{r bargraph for AS_strict/AS/ASTC/}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_AS_ASstrict.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(ASTC_AS_ASstrict_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_brewer(palette = "RdYlBu", name = "event type")
+dev.off()
+
+ggplot(ASTC_AS_ASstrict_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_manual(name = "event type", values = c("#d7191c","#fdae61","#ffffbf"))
+```
+
+```{r ASTC subgrouped for nmd definitions}
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% human_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% human_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "ASTC"))
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% chimp_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% chimp_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "ASTC"))
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% orang_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% orang_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% orang_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "ASTC"))
+
+ASTC_NMD_for_plot <- rbind(tmp1, tmp2, tmp3) %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("always_nmd","nmd_switch","never_nmd","ASTC")))
+
+```
+
+```{r ASTC/NMD plot}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_NMD.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(ASTC_NMD_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_discrete(name = "event type")
+dev.off()
+```
+
+```{r AS subgrouped for nmd definitions}
+tmp1 <- AS_only_human %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% human_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% human_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "AS"))
+
+tmp2 <- AS_only_chimp %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% chimp_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% chimp_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "AS"))
+
+tmp3 <- AS_only_orang %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% orang_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% orang_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% orang_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "AS"))
+
+AS_NMD_for_plot <- rbind(tmp1, tmp2, tmp3) %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("always_nmd","nmd_switch","never_nmd","AS")))
+
+```
+
+```{r AS/NMD plot}
+ggplot(AS_NMD_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_discrete(name = "event type")
+```
+
+```{r ASstrict subgrouped for nmd definitions}
+tmp1 <- AS_only_human_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% human_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% human_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "AS"))
+
+tmp2 <- AS_only_chimp_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% chimp_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% chimp_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "AS"))
+
+tmp3 <- AS_only_orang_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% orang_always_nmd$event_id ~ "always_nmd",
+                          event_id %in% orang_nmd_switch$event_id ~ "nmd_switch",
+                          event_id %in% orang_never_nmd$event_id ~ "never_nmd",
+                          TRUE ~ "AS"))
+
+ASstrict_NMD_for_plot <- rbind(tmp1, tmp2, tmp3) %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("always_nmd","nmd_switch","never_nmd","AS")))
+
+```
+
+```{r ASstrict/NMD plot}
+ggplot(ASstrict_NMD_for_plot, aes(x=constants, fill = type)) +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_discrete(name = "event type")
+```
+
+```{r AS/NMD/ASTC prep}
+#ASTC vs AS
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC"))
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC"))
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% orang_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC"))
+
+tmp4 <- AS_only_human %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "AS-NMD", TRUE ~ "AS"))
+  
+
+tmp5 <- AS_only_chimp %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>%
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "AS-NMD", TRUE ~ "AS"))
+  
+
+tmp6 <- AS_only_orang %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "AS-NMD", TRUE ~ "AS"))
+  
+
+ASTC_AS_NMD_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("ASTC","ASTC-NMD","AS-NMD","AS")))
+```
+
+```{r AS/NMD/ASTC plot}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_AS_NMD.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(ASTC_AS_NMD_for_plot, aes(x=constants, fill =type))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") + 
+  scale_fill_manual(name = "event type", values = rep(brewer.pal(5,"RdYlBu"),times=4))
+dev.off()
+
+ASTC_AS_NMD_for_plot2 <- ASTC_AS_NMD_for_plot
+levels(ASTC_AS_NMD_for_plot2$type)[levels(ASTC_AS_NMD_for_plot2$type)=="ASTC-NMD"] <- "NMD"
+levels(ASTC_AS_NMD_for_plot2$type)[levels(ASTC_AS_NMD_for_plot2$type)=="AS-NMD"] <- "NMD"  
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_AS_NMD_2.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(ASTC_AS_NMD_for_plot2, aes(x=constants, fill =type))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") + 
+  scale_fill_manual(name = "event type", values = rep(brewer.pal(5,"RdYlBu"),times=4))
+dev.off()
+```
+
+```{r ASstrict/NMD/ASTC prep}
+#ASTC vs AS
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC"))
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC"))
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% orang_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC"))
+
+tmp4 <- AS_only_human_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "AS-NMD", TRUE ~ "AS"))
+  
+
+tmp5 <- AS_only_chimp_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>%
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "AS-NMD", TRUE ~ "AS"))
+  
+
+tmp6 <- AS_only_orang_strict %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  data.frame() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "AS-NMD", TRUE ~ "AS"))
+  
+
+ASTC_ASstrict_NMD_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan"))) %>% 
+  mutate(type = factor(type, levels = c("ASTC","ASTC-NMD","AS-NMD","AS")))
+```
+
+```{r AS/NMD/ASTC plot}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_ASstrict_NMD.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(ASTC_ASstrict_NMD_for_plot, aes(x=constants, fill =type))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") + 
+  scale_fill_manual(values = c(rep(brewer.pal(5,"RdYlBu"),times=4)), name = "event type")
+dev.off()
+
+ASTC_ASstrict_NMD_for_plot2 <- ASTC_ASstrict_NMD_for_plot
+levels(ASTC_ASstrict_NMD_for_plot2$type)[levels(ASTC_ASstrict_NMD_for_plot2$type)=="ASTC-NMD"] <- "NMD"
+levels(ASTC_ASstrict_NMD_for_plot2$type)[levels(ASTC_ASstrict_NMD_for_plot2$type)=="AS-NMD"] <- "NMD"  
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_ASstrict_NMD_2.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(ASTC_ASstrict_NMD_for_plot2, aes(x=constants, fill =type))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") + 
+  scale_fill_manual(values = c(rep(brewer.pal(5,"RdYlBu"),times=4)), name = "event type")
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_ASstrict_NMD_2.pdf", height = 5, width = 5)
+ggplot(ASTC_ASstrict_NMD_for_plot2, aes(x=constants, fill =type))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") + 
+  scale_fill_manual(values = c(rep(brewer.pal(5,"RdYlBu"),times=4)), name = "event type")
+dev.off()
+
+# make this a horizontal plot?
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/ASTC_ASstrict_NMD_2_horizontal.pdf", height = 3, width = 6)
+ASTC_ASstrict_NMD_for_plot3 <- ASTC_ASstrict_NMD_for_plot2
+ASTC_ASstrict_NMD_for_plot3$constants <- factor(ASTC_ASstrict_NMD_for_plot3$constants, levels = c("orangutan","chimpanzee","human"))
+
+ggplot(ASTC_ASstrict_NMD_for_plot3, aes(x=constants, fill =type))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") + 
+  coord_flip() +
+  scale_fill_manual(values = c(rep(brewer.pal(5,"RdYlBu"),times=4)), name = "event type")
+dev.off()
+
+save(ASTC_ASstrict_NMD_for_plot3, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/ASTC_ASstrict_NMD_for_plot3.RData")
+```
+
+```{r prep for event types}
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp4 <- AS_only_human %>% 
+  data.frame() %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique() 
+
+tmp5 <- AS_only_chimp %>% 
+  data.frame() %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp6 <- AS_only_orang %>% 
+  data.frame() %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()  
+
+event_types_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan")))
+```
+
+```{r barplot evn}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/event_types.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(event_types_for_plot, aes(x=constants, fill =event_type.x))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_manual(name = "event type", values = c("#A50026","#D73027","#F46D43","#FDAE61","#FEE090","#FFFFBF","#E0F3F8","#ABD9E9","#74ADD1","#4575B4","#313695","#A50026","#D73027","#F46D43"))
+dev.off()
+
+
+```
+
+```{r prep for event types (with AS strict)}
+tmp1 <- all_astc_psi_hips %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp2 <- all_astc_psi_cips %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp3 <- all_astc_psi_oips %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp4 <- AS_only_human_strict %>% 
+  data.frame() %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique() 
+
+tmp5 <- AS_only_chimp_strict %>% 
+  data.frame() %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()
+
+tmp6 <- AS_only_orang_strict %>% 
+  data.frame() %>% 
+  select(event_id, event_type.x, constants) %>% 
+  unique()  
+
+event_types_for_plot <- rbind(tmp1, tmp2, tmp3, tmp4, tmp5, tmp6) %>% 
+  data.frame() %>% 
+  mutate(constants = factor(constants, levels = c("human","chimpanzee","orangutan")))
+```
+
+```{r barplot evn}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/event_types_strict.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(event_types_for_plot, aes(x=constants, fill =event_type.x))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_manual(name = "event type", values = c("#A50026","#D73027","#F46D43","#FDAE61","#FEE090","#FFFFBF","#E0F3F8","#ABD9E9","#74ADD1","#4575B4","#313695","#A50026","#D73027","#F46D43"))
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/event_barplots/event_types_strict.pdf", height = 5, width = 5)
+ggplot(event_types_for_plot, aes(x=constants, fill =event_type.x))  +
+  geom_bar() +
+  ylab("event count") +
+  xlab("") +
+  scale_fill_manual(name = "event type", values = c("#A50026","#D73027","#F46D43","#FDAE61","#FEE090","#FFFFBF","#E0F3F8","#ABD9E9","#74ADD1","#4575B4","#313695","#A50026","#D73027","#F46D43"))
+dev.off()
+
+```
+
+```{r overlap of ASTC events}
+# this is technically ASTC and NMD
+length(which(unique(all_astc_psi_hips$event_id) %in% unique(all_astc_psi_cips$event_id)))
+length(which(unique(all_astc_psi_hips$event_id) %in% unique(all_astc_psi_oips$event_id)))
+length(which(unique(all_astc_psi_hips$event_id) %in% unique(all_astc_psi_oips$event_id)))
+
+s4 <- list(human = unique(all_astc_psi_hips$event_id),
+           chimpanzee = unique(all_astc_psi_cips$event_id),
+           orangutan = unique(all_astc_psi_oips$event_id))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/overlap_astc_cross_species.png", height = 5, width = 5, units = "in", res = 300)
+plot(euler(s4, shape = "ellipse"), quantities = TRUE)
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/overlap_astc_cross_species.pdf", height = 5, width = 5)
+plot(euler(s4, shape = "ellipse"), quantities = TRUE)
+dev.off()
+```
+
+```{r overlap of just ASTC events prep}
+# added April 2023
+# in chunk above, the always NMD events were not removed from all_astc_psi_events before overlapping
+ASTC_only_hips <- all_astc_psi_hips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% human_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC")) %>% 
+  filter(type == "ASTC")
+
+ASTC_only_cips <- all_astc_psi_cips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% chimp_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC")) %>% 
+  filter(type == "ASTC")
+
+ASTC_only_oips <- all_astc_psi_oips %>% 
+  select(event_id, constants) %>% 
+  unique() %>% 
+  mutate(type = case_when(event_id %in% orang_always_nmd$event_id ~ "ASTC-NMD", TRUE ~ "ASTC")) %>% 
+  filter(type == "ASTC")
+
+s6 <- list(human = unique(ASTC_only_hips$event_id),
+           chimp = unique(ASTC_only_cips$event_id),
+           orang = unique(ASTC_only_oips$event_id))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/overlap_astc_only_cross_species.png", height = 5, width = 5, units = "in", res = 300)
+plot(euler(s6, shape = "ellipse"), quantities = TRUE)
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/overlap_astc_only_cross_species.pdf", height = 5, width = 5)
+plot(euler(s6, shape = "ellipse"), quantities = TRUE)
+dev.off()
+
+```
+
+```{r overlap ASTC and AS events}
+# this is technically ASTC, NMD, and AS
+s5 <- list(human = c(unique(all_astc_psi_hips$event_id), unique(AS_only_human_strict$event_id)),
+           chimpanzee = c(unique(all_astc_psi_cips$event_id), unique(AS_only_chimp_strict$event_id)),
+           orangutan = c(unique(all_astc_psi_oips$event_id), unique(AS_only_orang_strict$event_id)))
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/overlap_as_astc_cross_species.png", height = 5, width = 5, units = "in", res = 300)
+plot(euler(s5, shape = "ellipse"), quantities = TRUE)
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/overlap_as_astc_cross_species.pdf", height = 5, width = 5)
+plot(euler(s5, shape = "ellipse"), quantities = TRUE)
+dev.off()
+```
+
+```{r save data}
+#save.image("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_as_nmd_events.RData")
+```
+
