@@ -1,0 +1,65 @@
+---
+title: "manhattan_distance_dist"
+author: "juphilip"
+date: "6/22/2021"
+output: html_document
+---
+
+# What's happening?
+
+```{r setup, include=FALSE}
+# load event file
+all_distances <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_distances.tsv", header = TRUE, stringsAsFactors = FALSE) 
+
+all_distances_filt <- all_distances %>% 
+  filter(constant_vars == "fraction") %>% 
+  group_by(event_id) %>% 
+  summarize(sum_inner_dist = sum(inner_dist))
+```
+
+```{r}
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/man_dist/manhattan_dist_all.pdf", height = 4, width = 5)
+ggplot(all_distances_filt, aes(sum_inner_dist)) +
+  geom_histogram() +
+  ylab("Number of events") +
+  xlab("Distance")
+dev.off()
+```
+
+```{r}
+# make plot for all ASTC events
+ASTC_events <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_in_at_least_one_species.txt", header = FALSE, stringsAsFactors = FALSE)
+
+ASTC_in_all <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_in_all.txt", header = FALSE, stringsAsFactors = FALSE)
+
+test <- all_distances %>% 
+  filter(constant_vars == "fraction") %>% 
+  filter(event_id %in% ASTC_events$V1) %>% 
+  group_by(event_id) %>% 
+  summarize(sum_inner_dist = sum(inner_dist)) %>% 
+  ggplot(aes(sum_inner_dist)) +
+  geom_histogram() +
+  ylab("Number of events") +
+  xlab("Distance")
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/man_dist/manhattan_dist_any_ASTC.pdf", height = 4, width = 5)
+print(test)
+dev.off()
+
+test2 <- all_distances %>% 
+  filter(constant_vars == "fraction") %>% 
+  filter(event_id %in% ASTC_in_all$V1) %>% 
+  group_by(event_id) %>% 
+  summarize(sum_inner_dist = sum(inner_dist)) %>% 
+  ggplot(aes(sum_inner_dist)) +
+  geom_histogram() +
+  ylab("Number of events") +
+  xlab("Distance")
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/man_dist/manhattan_dist_all_ASTC.pdf", height = 4, width = 5)
+print(test2)
+dev.off()
+
+```
+
+

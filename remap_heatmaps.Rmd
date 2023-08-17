@@ -1,0 +1,1187 @@
+---
+title: "remap_manhattan_heatmaps"
+author: "juphilip"
+date: "3/27/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# What's happening
+calculate / find manhattan distance for remapped data
+recreate histograms and heatmaps
+
+```{r libraries}
+rm(list=ls(all=TRUE))
+library(dplyr)
+library(stringr)
+library(purrr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(cowplot)
+library(RColorBrewer)
+library(reshape2)
+library(pheatmap)
+library(tibble)
+library(matrixStats)
+library(grid)
+library(gridExtra)
+library(ggplot2)
+#install.packages("seriation", repos='http://cran.us.r-project.org')
+library(seriation)
+#install.packages("cba", repos='http://cran.us.r-project.org')
+library(cba)
+#install.packages("dendsort", repos='http://cran.us.r-project.org')
+library(dendsort)
+library(cowplot)
+library(RColorBrewer)
+library(reshape2)
+
+theme_set(theme_cowplot())
+
+num_events <- 500
+```
+
+```{r normalize function}
+normalize <- function(x){
+  if(rowMins(x) == rowMaxs(x)){
+    norm <- 1/ncol(x)
+  } else{
+    norm <- (x - rowMins(x))/(rowMaxs(x) - rowMins(x))
+  }
+  return(norm)
+}
+```
+
+```{r optimal leaf function, include=FALSE}
+# optimal leaf clustering function
+cl_cb <- function(hcl, mat){
+    # Recalculate manhattan distances for reorder method
+    dists <- dist(mat, method = "euclidean")
+
+    # Perform reordering according to OLO method
+    hclust_olo <- reorder(hcl, dists)
+    return(hclust_olo)
+}
+```
+
+
+```{r load data}
+all_events_psi_restricted <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_species_junctioncounts_restricted.tsv", header = TRUE, stringsAsFactors = FALSE)
+
+all_distance_species <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_distances.tsv", header = TRUE, stringsAsFactors = FALSE) %>% 
+  filter(constant_vars == "fraction")
+
+all_dpsi_fraction <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_dpsi.tsv", header = TRUE, stringsAsFactors = FALSE) %>% 
+  filter(comparison_factor == "fraction") %>% 
+  filter(comparison %in% c("1_2","2_3","3_4","4_5"))
+```
+
+```{r astc events}
+all_astc_psi_hips_dist <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "hips")) %>% 
+  left_join(all_dpsi_fraction, by = "event_id") %>% 
+  filter(constants == "human") %>% 
+  filter(sign(min_dpsi) != 0) %>% 
+  filter(sign(min_dpsi) == sign(max_dpsi)) %>% 
+  # more refined filtering that I haven't used before
+  # filtering on inner delta psi
+  filter(abs_inner_dpsi > 0.1, min_jc_comparison >= 15)
+
+all_astc_psi_cips_dist <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "cips")) %>% 
+  left_join(all_dpsi_fraction, by = "event_id") %>% 
+  filter(constants == "chimpanzee") %>% 
+  filter(sign(min_dpsi) != 0) %>% 
+  filter(sign(min_dpsi) == sign(max_dpsi)) %>% 
+  # more refined filtering that I haven't used before
+  # filtering on inner delta psi
+  filter(abs_inner_dpsi > 0.1, min_jc_comparison >= 15)
+
+all_astc_psi_oips_dist <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "oips")) %>% 
+  left_join(all_dpsi_fraction, by = "event_id") %>% 
+  filter(constants == "orangutan") %>% 
+  filter(sign(min_dpsi) != 0) %>% 
+  filter(sign(min_dpsi) == sign(max_dpsi)) %>% 
+  # more refined filtering that I haven't used before
+  # filtering on inner delta psi
+  filter(abs_inner_dpsi > 0.1, min_jc_comparison >= 15)
+
+
+```
+
+```{r astc in at least one species}
+astc_at_least_one <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_in_at_least_one_species.txt", header = FALSE, stringsAsFactors = FALSE)
+
+# summarize inner distance across all three comparisons
+astc_at_least_one_inner_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_at_least_one$V1) %>% 
+  group_by(event_id) %>% 
+  mutate(sum_dist = sum(dist), sum_inner_dist = sum(inner_dist)) %>% 
+  select(event_id, sum_dist, sum_inner_dist) %>% 
+  unique()
+
+astc_at_least_one_inner_dist_top <- astc_at_least_one_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  head(n=num_events)
+
+astc_at_least_one_inner_dist_bottom <- astc_at_least_one_inner_dist %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  na.omit(sum_inner_dist) %>% 
+  tail(n=num_events)
+  
+
+```
+
+```{r sum inner dist histogram}
+astc_at_least_one_inner_dist_histo <- astc_at_least_one_inner_dist %>% 
+  mutate(type = case_when(event_id %in% astc_at_least_one_inner_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_at_least_one_inner_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top500_3sp_sum_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_inner_dist_histo, aes(x=sum_inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Sum(Inner Distance)") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top500_3sp_sum_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_inner_dist_histo, aes(x=sum_inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(), legend.position = c(0.5,0.8)) +
+  xlab("Sum(Inner Distance)") +
+  ylab("# of Events")
+dev.off()
+
+
+
+```
+
+
+```{r make wide tables for heatmaps}
+all_psi_hips <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "hips")) %>% 
+  dcast(event_id ~ sample_name, value.var = "avg_psi") %>% 
+  select(c(event_id, hips_cyto_jd952, hips_cyto_jd958, hips_mono_jd954, hips_mono_jd960,
+         hips_poll_jd955, hips_poll_jd961, hips_polm_jd956, hips_polm_jd962, hips_polh_jd957,
+         hips_polh_jd963))
+  
+all_psi_cips <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "cips")) %>% 
+  dcast(event_id ~ sample_name, value.var = "avg_psi") %>% 
+  select(c(event_id, cips_cyto_jd940, cips_cyto_jd946, cips_mono_jd942, cips_mono_jd948,
+           cips_poll_jd943, cips_poll_jd949, cips_polm_jd944, cips_polm_jd950, cips_polh_jd945,
+           cips_polh_jd951))
+
+all_psi_oips <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "oips")) %>% 
+  dcast(event_id ~ sample_name, value.var = "avg_psi") %>% 
+  select(c(event_id, oips_cyto_jd928, oips_cyto_jd934, oips_mono_jd930, oips_mono_jd936,
+           oips_poll_jd931, oips_poll_jd937, oips_polm_jd932, oips_polm_jd938,
+           oips_polh_jd933, oips_polh_jd939))
+```
+
+```{r row normalize}
+astc_hips_row_norm <- all_psi_hips %>% 
+  filter(complete.cases(.)) %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist$event_id) %>% 
+  column_to_rownames("event_id")
+
+for (i in 1:nrow(astc_hips_row_norm)){
+  astc_hips_row_norm[i,] <- as.vector(normalize(as.matrix(astc_hips_row_norm[i,])))
+}
+
+astc_cips_row_norm <- all_psi_cips %>% 
+  filter(complete.cases(.)) %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist$event_id) %>% 
+  column_to_rownames("event_id")
+
+for (i in 1:nrow(astc_cips_row_norm)){
+  astc_cips_row_norm[i,] <- as.vector(normalize(as.matrix(astc_cips_row_norm[i,])))
+}
+
+astc_oips_row_norm <- all_psi_oips %>% 
+  filter(complete.cases(.)) %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist$event_id) %>% 
+  column_to_rownames("event_id")
+
+for (i in 1:nrow(astc_oips_row_norm)){
+  astc_oips_row_norm[i,] <- as.vector(normalize(as.matrix(astc_oips_row_norm[i,])))
+}
+
+```
+
+```{r heatmap annotation df}
+annotation_df <- data.frame(species = rep(c("human","chimpanzee","orangutan"), each=10))
+rownames(annotation_df) <- paste("species", 1:30, sep="")
+
+species <- c("#66c2a5","#fc8d62","#8da0cb")
+names(species) <- c("human","chimpanzee","orangutan")
+anno_colors <- list(species=species)
+
+annotation_df_av <- data.frame(species = rep(c("human","chimpanzee","orangutan"), each=5))
+rownames(annotation_df_av) <- paste("species", 1:15, sep="")
+```
+
+
+```{r heatmap 3 species sum inner dist top}
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist_top$event_id)
+
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist_top$event_id) 
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_cips_top_tmp, by = "event_id") %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df)
+
+pheatmap(na.omit(astc_hips_top_tmp))
+pheatmap(na.omit(astc_cips_top_tmp))
+pheatmap(na.omit(astc_oips_top_tmp))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_specific_top500_3sp_sum_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10,20))
+dev.off()
+```
+
+
+```{r}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/test.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, gaps_col = c(10,20))
+dev.off()
+```
+
+
+```{r heatmap 3 species sum inner dist bottom}
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist_bottom$event_id)
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_inner_dist_bottom$event_id) 
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_cips_bottom_tmp, by = "event_id") %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df)
+
+pheatmap(na.omit(astc_hips_bottom_tmp))
+pheatmap(na.omit(astc_cips_bottom_tmp))
+pheatmap(na.omit(astc_oips_bottom_tmp))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_conserved_top500_3sp_sum_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10,20))
+dev.off()
+```
+
+```{r all three species dist}
+# summarize inner distance across all three comparisons
+astc_at_least_one_dist_top <- astc_at_least_one_inner_dist %>% 
+  arrange(desc(sum_dist)) %>% 
+  na.omit(sum_dist) %>% 
+  head(n=num_events)
+
+astc_at_least_one_dist_bottom <- astc_at_least_one_inner_dist %>% 
+  arrange(desc(sum_dist)) %>% 
+  na.omit(sum_dist) %>% 
+  tail(n=num_events)
+  
+```
+
+```{r sum dist histogram}
+astc_at_least_one_dist_histo <- astc_at_least_one_inner_dist %>% 
+  mutate(type = case_when(event_id %in% astc_at_least_one_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_at_least_one_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top500_3sp_sum_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_inner_dist_histo, aes(x=sum_inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Sum(Distance)") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top500_3sp_sum_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_inner_dist_histo, aes(x=sum_inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(), legend.position = c(0.5,0.8)) +
+  xlab("Sum(Distance)") +
+  ylab("# of Events")
+dev.off()
+
+
+
+```
+
+```{r heatmap 3 species sum dist top}
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_dist_top$event_id)
+
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_dist_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_dist_top$event_id) 
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_cips_top_tmp, by = "event_id") %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df)
+
+pheatmap(na.omit(astc_hips_top_tmp))
+pheatmap(na.omit(astc_cips_top_tmp))
+pheatmap(na.omit(astc_oips_top_tmp))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_specific_top500_3sp_sum_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10,20))
+dev.off()
+```
+
+```{r heatmap 3 species sum dist bottom}
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_dist_bottom$event_id)
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_dist_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_dist_bottom$event_id) 
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_cips_bottom_tmp, by = "event_id") %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df)
+
+pheatmap(na.omit(astc_hips_bottom_tmp))
+pheatmap(na.omit(astc_cips_bottom_tmp))
+pheatmap(na.omit(astc_oips_bottom_tmp))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_conserved_top500_3sp_sum_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10,20))
+dev.off()
+```
+
+```{r all events in heatmap / ASTC in at least one}
+all_hips <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one$V1)
+
+all_cips <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one$V1) 
+
+all_oips <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one$V1) 
+
+all_three <- all_hips %>% 
+  left_join(all_cips, by = "event_id") %>% 
+  left_join(all_oips, by = "event_id") %>% 
+  column_to_rownames("event_id") %>% 
+  na.omit()
+
+colnames(all_three) <- rownames(annotation_df)
+
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_at_least_one.png", width = 10, height = 30, units = "in", res = 300)
+pheatmap(all_three, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "AS-TC events in at least one", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, gaps_col = c(10,20))
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_at_least_one.pdf", width = 10, height = 30)
+pheatmap(all_three, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "AS-TC events in at least one", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, gaps_col = c(10,20))
+dev.off()
+```
+
+
+## ASTC in all three
+These are so few events, that bottom and top heatmap don't look very different
+```{r overlap events}
+# fixed
+astc_in_all <- all_astc_psi_hips_dist %>% 
+  filter(event_id %in% all_astc_psi_cips_dist$event_id) %>% 
+  filter(event_id %in% all_astc_psi_oips_dist$event_id)
+
+astc_all <- all_distance_species %>%
+  filter(event_id %in% astc_in_all$event_id) %>% 
+  group_by(event_id) %>% 
+  mutate(sum_dist = sum(dist), sum_inner_dist = sum(inner_dist)) %>% 
+  select(event_id, sum_dist, sum_inner_dist) %>% 
+  unique()
+  
+
+write.table(astc_all$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_in_all.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r astc in all sum inner dist top and bottom}
+astc_all_inner_top <- astc_all %>%
+  na.omit(sum_inner_dist) %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  head(n=100)
+
+astc_all_inner_bottom <- astc_all %>% 
+  na.omit(sum_inner_dist) %>% 
+  arrange(desc(sum_inner_dist)) %>% 
+  tail(n=100)
+```
+
+```{r hist astc in all sum inner dist}
+astc_in_all_dist_histo <- astc_all %>% 
+  mutate(type = case_when(event_id %in% astc_all_inner_top$event_id ~ "species-specific",
+                          event_id %in% astc_all_inner_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top100_3sp_sum_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_in_all_dist_histo, aes(x=sum_inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Sum(Inner Distance)") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top100_3sp_sum_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_in_all_dist_histo, aes(x=sum_inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Sum(Inner Distance)") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r heatmap astc in all sum inner dist }
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_all_inner_top$event_id)
+
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_all_inner_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_all_inner_top$event_id)
+
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_cips_top_tmp, by = "event_id") %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_specific_top100_3sp_sum_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10,20))
+dev.off()
+
+
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_all_inner_bottom$event_id)
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_all_inner_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_all_inner_bottom$event_id)
+
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_cips_bottom_tmp, by = "event_id") %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_conserved_top100_3sp_sum_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10,20))
+dev.off()
+```
+
+```{r all events in heatmap / astc in all three}
+all_hips <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_in_all$event_id)
+
+all_cips <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_in_all$event_id) 
+
+all_oips <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_in_all$event_id) 
+
+all_three <- all_hips %>% 
+  left_join(all_cips, by = "event_id") %>% 
+  left_join(all_oips, by = "event_id") %>% 
+  column_to_rownames("event_id") %>% 
+  na.omit()
+
+colnames(all_three) <- rownames(annotation_df)
+
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_all_three.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_three, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "AS-TC events in all three species", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, gaps_col = c(10,20))
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_all_three.pdf", width = 10, height = 12)
+pheatmap(all_three, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),3),
+         cellwidth = 10, cellheight = 1, main = "AS-TC events in all three species", legend = TRUE, annotation_col = annotation_df, annotation_colors = anno_colors, annotation_names_col = TRUE, annotation_legend = TRUE, gaps_col = c(10,20))
+dev.off()
+```
+
+# Human vs Chimp
+## ASTC in at least one
+
+```{r human chimp astc at least one}
+astc_at_least_one_hc <- unique(c(all_astc_psi_hips_dist$event_id, all_astc_psi_cips_dist$event_id))
+
+astc_at_least_one_hc_dist <- all_distance_species %>%
+  filter(event_id %in% astc_at_least_one_hc) %>% 
+  filter(comparison == "human_chimpanzee") %>% 
+  select(event_id, dist, inner_dist) %>% 
+  unique()
+
+write.table(astc_at_least_one_hc_dist$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_at_least_one_hc.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r hc at least one top and bottom}
+astc_at_least_one_hc_dist_top <- astc_at_least_one_hc_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 500)
+
+astc_at_least_one_hc_dist_bottom <- astc_at_least_one_hc_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  tail(n = 500)
+```
+
+```{r hist hc at least one}
+astc_at_least_one_hc_dist_histo <- astc_at_least_one_hc_dist %>% 
+  mutate(type = case_when(event_id %in% astc_at_least_one_hc_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_at_least_one_hc_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top500_hc_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_hc_dist_histo, aes(x=inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top500_hc_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_hc_dist_histo, aes(x=inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r annotation dataframe human chimp}
+## annotation for human and chimp
+annotation_df_hc <- data.frame(species = rep(c("human","chimpanzee"), each=10))
+rownames(annotation_df_hc) <- paste("species", 1:20, sep="")
+
+species_hc <- c("#66c2a5","#fc8d62")
+names(species_hc) <- c("human","chimpanzee")
+anno_colors_hc <- list(species=species)
+```
+
+```{r heatmap hc at least one}
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_hc_dist_top$event_id)
+
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_hc_dist_top$event_id)
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_cips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df_hc)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_specific_top500_hc_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events (human/chimp)", legend = TRUE, annotation_col = annotation_df_hc, annotation_colors = anno_colors_hc, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+
+
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_hc_dist_bottom$event_id)
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_hc_dist_bottom$event_id)
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_cips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df_hc)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_conserved_top500_hc_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events (human/chimp)", legend = TRUE, annotation_col = annotation_df_hc, annotation_colors = anno_colors_hc, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+```
+
+## astc in both
+```{r human chimp astc in both}
+astc_both_hc <- all_astc_psi_hips_dist %>% 
+  filter(event_id %in% all_astc_psi_cips_dist$event_id) %>% 
+  select(event_id) %>% 
+  unique()
+  
+astc_both_hc_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_both_hc$event_id) %>% 
+  filter(comparison == "human_chimpanzee") %>% 
+  select(event_id, dist, inner_dist) %>% 
+  unique()
+  
+write.table(astc_both_hc$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_both_hc.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r hc both top and bottom}
+astc_both_hc_dist_top <- astc_both_hc_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 130)
+
+astc_both_hc_dist_bottom <- astc_both_hc_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  tail(n = 130)
+```
+
+```{r hist both hc}
+astc_both_hc_dist_histo <- astc_both_hc_dist %>% 
+  mutate(type = case_when(event_id %in% astc_both_hc_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_both_hc_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top130_hc_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_both_hc_dist_histo, aes(x=inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top130_hc_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_both_hc_dist_histo, aes(x=inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r heatmap both hc}
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_hc_dist_top$event_id)
+
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_hc_dist_top$event_id)
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_cips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df_hc)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_specific_top130_hc_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events (human/chimp)", legend = TRUE, annotation_col = annotation_df_hc, annotation_colors = anno_colors_hc, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+
+
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_hc_dist_bottom$event_id)
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_hc_dist_bottom$event_id)
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_cips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df_hc)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_conserved_top130_hc_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events (human/chimp)", legend = TRUE, annotation_col = annotation_df_hc, annotation_colors = anno_colors_hc, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+```
+
+
+
+
+# Human vs Orang
+## at least one astc
+```{r human orang astc at least one}
+astc_at_least_one_ho <- unique(c(all_astc_psi_hips_dist$event_id, all_astc_psi_oips_dist$event_id))
+
+astc_at_least_one_ho_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_at_least_one_ho) %>% 
+  filter(comparison == "human_orangutan") %>% 
+  select(event_id, dist, inner_dist) %>% 
+  unique()
+
+write.table(astc_at_least_one_ho_dist$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_at_least_one_ho.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r at least one ho top and bottom}
+astc_at_least_one_ho_dist_top <- astc_at_least_one_ho_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 380)
+
+astc_at_least_one_ho_dist_bottom <- astc_at_least_one_ho_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  tail(n = 380)
+```
+
+```{r hist at least one ho}
+astc_at_least_one_ho_dist_histo <- astc_at_least_one_ho_dist %>% 
+  mutate(type = case_when(event_id %in% astc_at_least_one_ho_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_at_least_one_ho_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top380_ho_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_ho_dist_histo, aes(x=inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top380_ho_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_ho_dist_histo, aes(x=inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r annotation dataframe human orang}
+## annotation for human and orang
+annotation_df_ho <- data.frame(species = rep(c("human","orangutan"), each=10))
+rownames(annotation_df_ho) <- paste("species", 1:20, sep="")
+
+species_ho <- c("#66c2a5","#8da0cb")
+names(species_ho) <- c("human","orangutan")
+anno_colors_ho <- list(species=species)
+```
+
+```{r heatmap ho at least one}
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_ho_dist_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_ho_dist_top$event_id)
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df_ho)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_specific_top380_ho_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events (human/orang)", legend = TRUE, annotation_col = annotation_df_ho, annotation_colors = anno_colors_ho, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+
+
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_ho_dist_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_ho_dist_bottom$event_id)
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df_ho)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_conserved_top380_ho_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events (human/orang)", legend = TRUE, annotation_col = annotation_df_ho, annotation_colors = anno_colors_ho, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+```
+
+## astc in both
+```{r human orang astc in both}
+astc_both_ho <- all_astc_psi_hips_dist %>% 
+  filter(event_id %in% all_astc_psi_oips_dist$event_id) %>%
+  select(event_id) %>% 
+  unique()
+  
+astc_both_ho_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_both_ho$event_id) %>% 
+  filter(comparison == "human_orangutan") %>% 
+  select(event_id, dist, inner_dist) %>% 
+  unique()
+
+write.table(astc_both_ho_dist$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_both_ho.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r both ho top and bottom}
+astc_both_ho_dist_top <- astc_both_ho_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 50)
+
+astc_both_ho_dist_bottom <- astc_both_ho_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  tail(n = 50)
+```
+
+```{r hist both ho}
+astc_both_ho_dist_histo <- astc_both_ho_dist %>% 
+  mutate(type = case_when(event_id %in% astc_both_ho_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_both_ho_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top50_ho_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_both_ho_dist_histo, aes(x=inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top50_ho_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_both_ho_dist_histo, aes(x=inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r heatmap both ho}
+astc_hips_top_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_ho_dist_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_ho_dist_top$event_id)
+
+all_top_tmp <- astc_hips_top_tmp %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df_ho)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_specific_top50_ho_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events (human/orang)", legend = TRUE, annotation_col = annotation_df_ho, annotation_colors = anno_colors_ho, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+
+
+astc_hips_bottom_tmp <- astc_hips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_ho_dist_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_ho_dist_bottom$event_id)
+
+all_bottom_tmp <- astc_hips_bottom_tmp %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df_ho)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_conserved_top50_ho_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events (human/orang)", legend = TRUE, annotation_col = annotation_df_ho, annotation_colors = anno_colors_ho, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+```
+
+
+# Chimp vs Orang
+## at least one astc
+```{r chimp orang astc in at least one}
+astc_at_least_one_co <- unique(c(all_astc_psi_cips_dist$event_id, all_astc_psi_oips_dist$event_id)) 
+
+astc_at_least_one_co_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_at_least_one_co) %>% 
+  filter(comparison == "chimpanzee_orangutan") %>% 
+  select(event_id, dist, inner_dist) %>% 
+  unique()
+
+write.table(astc_at_least_one_co_dist$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_at_least_one_co.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r at least one co top and bottom}
+astc_at_least_one_co_dist_top <- astc_at_least_one_co_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 360)
+
+astc_at_least_one_co_dist_bottom <- astc_at_least_one_co_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  tail(n = 360)
+```
+
+```{r hist at least one co}
+astc_at_least_one_co_dist_histo <- astc_at_least_one_co_dist %>% 
+  mutate(type = case_when(event_id %in% astc_at_least_one_co_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_at_least_one_co_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top360_co_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_co_dist_histo, aes(x=inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_top360_co_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_at_least_one_co_dist_histo, aes(x=inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r annotation dataframe chimp orang}
+## annotation for human and orang
+annotation_df_co <- data.frame(species = rep(c("chimpanzee","orangutan"), each=10))
+rownames(annotation_df_co) <- paste("species", 1:20, sep="")
+
+species_co <- c("#fc8d62","#8da0cb")
+names(species_co) <- c("chimpanzee","orangutan")
+anno_colors_co <- list(species=species)
+```
+
+```{r heatmap co at least one}
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_co_dist_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_co_dist_top$event_id)
+
+all_top_tmp <- astc_cips_top_tmp %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df_co)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_specific_top360_co_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events (chimp/orang)", legend = TRUE, annotation_col = annotation_df_co, annotation_colors = anno_colors_co, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_co_dist_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_at_least_one_co_dist_bottom$event_id)
+
+all_bottom_tmp <- astc_cips_bottom_tmp %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df_co)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_conserved_top360_co_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events (human/orang)", legend = TRUE, annotation_col = annotation_df_co, annotation_colors = anno_colors_co, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+```
+
+## astc in both
+```{r chimp orang astc in both}
+astc_both_co <- all_astc_psi_cips_dist %>% 
+  filter(event_id %in% all_astc_psi_oips_dist$event_id) %>% 
+  select(event_id) %>% 
+  unique()
+  
+astc_both_co_dist <- all_distance_species %>% 
+  filter(event_id %in% astc_both_co$event_id) %>% 
+  filter(comparison == "chimpanzee_orangutan") %>% 
+  select(event_id, dist, inner_dist) %>% 
+  unique()
+
+write.table(astc_both_co_dist$event_id, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_both_co.txt",
+            sep = "\t", row.names = F, col.names = F, quote = F)
+```
+
+```{r astc both co top and bottom}
+astc_both_co_dist_top <- astc_both_co_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 50)
+
+astc_both_co_dist_bottom <- astc_both_co_dist %>% 
+  arrange(desc(inner_dist)) %>% 
+  na.omit(inner_dist) %>% 
+  head(n = 50)
+```
+
+```{r hist both co}
+astc_both_co_dist_histo <- astc_both_co_dist %>% 
+  mutate(type = case_when(event_id %in% astc_both_co_dist_top$event_id ~ "species-specific",
+                          event_id %in% astc_both_co_dist_bottom$event_id ~ "conserved",
+                          TRUE ~ "mid"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top50_co_inner_dist_grey.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_both_co_dist_histo, aes(x=inner_dist)) +
+  geom_histogram() +
+  theme(legend.title=element_blank()) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/histo_astc_only_top50_co_inner_dist_col.png", width = 6, height = 3, units = "in", res = 300)
+ggplot(astc_both_co_dist_histo, aes(x=inner_dist, fill=type)) +
+  geom_histogram() +
+  scale_fill_manual(breaks=c("conserved","species-specific"), values=c("blue", "gray30","gold")) +
+  theme(legend.title=element_blank(),  legend.position = c(0.5,0.8)) +
+  xlab("Inner Distance") +
+  ylab("# of Events")
+dev.off()
+```
+
+```{r heatmap both co}
+astc_cips_top_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_co_dist_top$event_id)
+
+astc_oips_top_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_co_dist_top$event_id)
+
+all_top_tmp <- astc_cips_top_tmp %>% 
+  left_join(astc_oips_top_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_top_tmp) <- rownames(annotation_df_cho)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_specific_top50_co_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_top_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "species-specific AS-TC events (chimp/orang)", legend = TRUE, annotation_col = annotation_df_co, annotation_colors = anno_colors_co, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+
+
+astc_cips_bottom_tmp <- astc_cips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_co_dist_bottom$event_id)
+
+astc_oips_bottom_tmp <- astc_oips_row_norm %>% 
+  rownames_to_column("event_id") %>% 
+  filter(event_id %in% astc_both_co_dist_bottom$event_id)
+
+all_bottom_tmp <- astc_cips_bottom_tmp %>% 
+  left_join(astc_oips_bottom_tmp, by = "event_id") %>% 
+  column_to_rownames("event_id")
+
+colnames(all_bottom_tmp) <- rownames(annotation_df_co)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/heatmap_astc_only_conserved_top50_co_inner_dist.png", width = 10, height = 12, units = "in", res = 300)
+pheatmap(all_bottom_tmp, cluster_cols = FALSE, show_rownames = FALSE, labels_col = rep(c( 'cyto','cyto','mono','mono','pol_light','pol_light','pol_med','pol_med','pol_heavy','pol_heavy'),2),
+         cellwidth = 10, cellheight = 1, main = "conserved AS-TC events (human/orang)", legend = TRUE, annotation_col = annotation_df_co, annotation_colors = anno_colors_co, annotation_names_col = TRUE, annotation_legend = TRUE, clustering_callback = cl_cb, gaps_col = c(10))
+dev.off()
+```
+
+
+
+# save data
+
+```{r save data}
+save.image("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/heatmaps/remap_heatmaps.RData")
+```
+

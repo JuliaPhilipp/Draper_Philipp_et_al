@@ -1,0 +1,149 @@
+---
+title: "supp_tables"
+author: "juphilip"
+date: "6/24/2021"
+output: html_document
+---
+
+# What's happening?
+Create supplementary tables for primate manuscript
+
+```{r setup, include=FALSE}
+# load data
+all_events_psi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_species_junctioncounts.tsv", header = TRUE, stringsAsFactors = FALSE)
+
+all_events_psi_restricted <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/all_species_junctioncounts_restricted.tsv", header = TRUE, stringsAsFactors = FALSE)
+
+human_events_psi_restricted <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "hips")) %>% 
+  select(c("sample_name","event_id","event_type","avg_psi"))
+
+chimp_events_psi_restricted <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "cips")) %>% 
+  select(c("sample_name","event_id","event_type","avg_psi"))
+
+orang_events_psi_restricted <- all_events_psi_restricted %>% 
+  filter(str_detect(sample_name, "oips")) %>% 
+  select(c("sample_name","event_id","event_type","avg_psi"))
+
+# load gtfs
+human_gtf <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/human_splice_lib_events.bed", header = FALSE, stringsAsFactors = FALSE)
+
+chimp_gtf <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/chimpanzee_splice_lib_events.bed", header = FALSE, stringsAsFactors = FALSE)
+
+orang_gtf <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/orangutan_splice_lib_events.bed", header = FALSE, stringsAsFactors = FALSE)
+
+# load gene symbols
+human_genes <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/human_genes_events.tsv", header = FALSE, stringsAsFactors = FALSE)
+
+chimp_genes <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/chimpanzee_genes_events.tsv", header = FALSE, stringsAsFactors = FALSE)
+
+orang_genes <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_orang/orangutan_genes_events.tsv", header = FALSE, stringsAsFactors = FALSE)
+```
+
+# Table for Figure 1D
+```{r}
+load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/ASTC_ASstrict_NMD_for_plot3.RData")
+
+human_table <- ASTC_ASstrict_NMD_for_plot3 %>% 
+  filter(constants == "human") %>% 
+  left_join(human_events_psi_restricted, by = "event_id") %>% 
+  spread(key = sample_name, value = avg_psi) %>% 
+  left_join(human_gtf, by = c("event_id" = "V4")) %>% 
+  left_join(human_genes, by = c("event_id" = "V2")) %>% 
+  select(c(constants, event_id, V1.y, event_type, type, V1.x:V3, V6, starts_with("hips")))
+
+colnames(human_table)[1:9] <- c("species","event_id","gene_symbol","event_type","type","chr","start","end","strand")
+
+chimp_table <- ASTC_ASstrict_NMD_for_plot3 %>% 
+  filter(constants == "chimpanzee") %>% 
+  left_join(chimp_events_psi_restricted, by = "event_id") %>% 
+  spread(key = sample_name, value = avg_psi) %>% 
+  left_join(chimp_gtf, by = c("event_id" = "V4")) %>% 
+  left_join(chimp_genes, by = c("event_id" = "V2")) %>% 
+  select(c(constants, event_id, V1.y, event_type, type, V1.x:V3, V6, starts_with("cips")))
+
+colnames(chimp_table)[1:9] <- c("species","event_id","gene_symbol","event_type","type","chr","start","end","strand")
+
+orang_table <- ASTC_ASstrict_NMD_for_plot3 %>% 
+  filter(constants == "orangutan") %>% 
+  left_join(orang_events_psi_restricted, by = "event_id") %>% 
+  spread(key = sample_name, value = avg_psi) %>% 
+  left_join(orang_gtf, by = c("event_id" = "V4")) %>% 
+  left_join(orang_genes, by = c("event_id" = "V2")) %>% 
+  select(c(constants, event_id, V1.y, event_type, type, V1.x:V3, V6, starts_with("oips")))
+
+colnames(orang_table)[1:9] <- c("species","event_id","gene_symbol","event_type","type","chr","start","end","strand")
+
+```
+
+```{r write out tables for fig 1d}
+write.table(human_table, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/supp_tables/Fig1D_human.tsv", row.names = F, col.names = T, sep = "\t", quote = F)
+
+write.table(chimp_table, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/supp_tables/Fig1D_chimp.tsv", row.names = F, col.names = T, sep = "\t", quote = F)
+
+write.table(orang_table, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/supp_tables/Fig1D_orang.tsv", row.names = F, col.names = T, sep = "\t", quote = F)
+
+```
+
+# Table for Figure 1E
+```{r}
+# add manhattan distances??
+ASTC_human_table <- all_astc_psi_hips %>% 
+  mutate(species = "human") %>% 
+  select(species, sample_name, event_id, avg_psi) %>% 
+  unique() %>% 
+  spread(key = sample_name, value = avg_psi) %>% 
+  left_join(human_gtf, by = c("event_id" = "V4")) %>% 
+  left_join(human_genes, by = c("event_id" = "V2")) %>% 
+  mutate(also_ASTC_in = case_when(event_id %in% all_astc_psi_cips$event_id & event_id %in% all_astc_psi_oips$event_id ~ "chimp,orang",
+                                  event_id %in% all_astc_psi_cips$event_id ~ "chimp",
+                                  event_id %in% all_astc_psi_oips$event_id ~ "orang")) %>% 
+  select(c(species, event_id, V1.y, also_ASTC_in, V1.x:V3, V6, starts_with("hips")))
+
+colnames(ASTC_human_table)[3:8] <- c("gene_symbol","also_ASTC_in","chr","start","end","strand")
+
+
+ASTC_chimp_table <- all_astc_psi_cips %>% 
+  mutate(species = "chimpanzee") %>% 
+  select(species, sample_name, event_id, avg_psi) %>% 
+  unique() %>% 
+  spread(key = sample_name, value = avg_psi) %>% 
+  left_join(chimp_gtf, by = c("event_id" = "V4")) %>% 
+  left_join(chimp_genes, by = c("event_id" = "V2")) %>% 
+  mutate(also_ASTC_in = case_when(event_id %in% all_astc_psi_hips$event_id & event_id %in% all_astc_psi_oips$event_id ~ "human,orang",
+                                  event_id %in% all_astc_psi_hips$event_id ~ "human",
+                                  event_id %in% all_astc_psi_oips$event_id ~ "orang")) %>% 
+  select(c(species, event_id, V1.y, also_ASTC_in, V1.x:V3, V6, starts_with("cips")))
+
+colnames(ASTC_chimp_table)[3:8] <- c("gene_symbol","also_ASTC_in","chr","start","end","strand")
+
+ASTC_orang_table <- all_astc_psi_oips %>% 
+  mutate(species = "orangutan") %>% 
+  select(species, sample_name, event_id, avg_psi) %>% 
+  unique() %>% 
+  spread(key = sample_name, value = avg_psi) %>% 
+  left_join(orang_gtf, by = c("event_id" = "V4")) %>% 
+  left_join(orang_genes, by = c("event_id" = "V2")) %>% 
+  mutate(also_ASTC_in = case_when(event_id %in% all_astc_psi_hips$event_id & event_id %in% all_astc_psi_cips$event_id ~ "human,chimp",
+                                  event_id %in% all_astc_psi_hips$event_id ~ "human",
+                                  event_id %in% all_astc_psi_cips$event_id ~ "chimp")) %>% 
+  select(c(species, event_id, V1.y, also_ASTC_in, V1.x:V3, V6, starts_with("oips")))
+ 
+colnames(ASTC_orang_table)[3:8] <- c("gene_symbol","also_ASTC_in","chr","start","end","strand")
+
+```
+
+```{r write out fig1E tables}
+write.table(ASTC_human_table, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/supp_tables/Fig1E_human.tsv", row.names = F, col.names = T, sep = "\t", quote = F)
+
+write.table(ASTC_chimp_table, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/supp_tables/Fig1E_chimp.tsv", row.names = F, col.names = T, sep = "\t", quote = F)
+
+write.table(ASTC_orang_table, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/supp_tables/Fig1E_orang.tsv", row.names = F, col.names = T, sep = "\t", quote = F)
+
+```
+
+# Table for Figure 5
+in script make_RBP_tables.Rmd
+# Table for Sup Fig 5
+in script make_RBP_tables.Rmd
