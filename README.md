@@ -1,5 +1,5 @@
 # Isoform-specific translational control is evolutionarily conserved in primates
-Jolene Draper, Julia Philipp, Zach Neeb, Richard Thomas, Solomon Katzman, Sofie Salama, David Haussler,  Jeremy R. Sanford
+Jolene Draper, Julia Philipp, Zach Neeb, Richard Thomas, Sol Katzman, Sofie Salama, David Haussler,  Jeremy R. Sanford
 
 
 This is the repository containing the code for the paper mnentioned above. The paper can be found on bioarchive under https://www.biorxiv.org/content/10.1101/2023.04.21.537863v2
