@@ -1,5 +1,5 @@
 # Isoform-specific translational control is evolutionarily conserved in primates
-Jolene Draper, Julia Philipp, Zach Neeb, Richard Thomas, Solomon Katzman, Sofie Salama, David Haussler,  Jeremy R. Sanford
+Jolene Draper, Julia Philipp, Zach Neeb, Richard Thomas, Sol Katzman, Sofie Salama, David Haussler,  Jeremy R. Sanford
 
 
 This is the repository containing the code for the paper mnentioned above. The paper can be found on bioarchive under https://www.biorxiv.org/content/10.1101/2023.04.21.537863v2
@@ -12,18 +12,18 @@ JunctionCounts - a pipeline developed in the Sanfordlab - was run for event dete
 
 ### Code for Figures & Supplementary Material
 
-|Figure|Script|Comment|    
-|---|---|---|
-|Fig 1|filter_for_ASTC.Rmd | done |
-|Fig 2|remap_sym_heatmaps_fig.Rmd | done |
-|Fig 3|remap_background_conservation.Rmd, remap_conservation_plots.Rmd| check |
-|Fig 5|interactive_rbp_plots.Rmd| needs work |
-|Supp Fig 1a|manhattan_distance_dist.Rmd| check |
-|Supp Fig 1b|map_stats.R| check |
-|Supp Fig 1c|genebody_coverage_plot.R | check |
-|Supp Fig 1d|remap_fraction_correlation.Rmd | check |
-|Supp Table 1| supp_tables.Rmd| check |
-|Supp Table 8-11 | make_RBP_tables.Rmd | check |
+|Figure|Script|
+|---|---|
+|Fig 1|filter_for_ASTC.Rmd |
+|Fig 2|remap_sym_heatmaps_fig.Rmd |
+|Fig 3|remap_background_conservation.Rmd, remap_conservation_plots.Rmd|
+|Fig 5|interactive_rbp_plots.Rmd|
+|Supp Fig 1a|manhattan_distance_dist.Rmd|
+|Supp Fig 1b|map_stats.R|
+|Supp Fig 1c|genebody_coverage_plot.R |
+|Supp Fig 1d|remap_fraction_correlation.Rmd |
+|Supp Table 1| supp_tables.Rmd|
+|Supp Table 8-11 | make_RBP_tables.Rmd |
 
 ### Data
 Data for this publication can be found on GEO under accession number GSE230441 or [here](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE230441). The data is currently private and is scheduled to be released on Apr 30, 2024 or upon publication.
