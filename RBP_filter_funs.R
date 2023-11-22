@@ -70,9 +70,7 @@ RBP_by_conservation <- function(df, species1, species2, conservation_df, conserv
   
 }
 
-summary_table <- function(rnacmpt_ids, data_a, data_b, data_c, data_d, data_cons, data_spec, species1, species2){
-  colname1 <- paste0(substring(species1,1,1),"_AS_",substring(species2,1,1),"_ASTC")
-  colname2 <- paste0(substring(species1,1,1),"_ASTC_",substring(species2,1,1),"_AS")
+summary_table <- function(rnacmpt_ids, data_a, data_b, data_c, data_d, data_cons, data_spec){
   table_0 <- rnacmpt_ids %>% 
     mutate(Var1 = ID) %>% 
     arrange(Var1) %>% 
@@ -134,21 +132,32 @@ summary_table <- function(rnacmpt_ids, data_a, data_b, data_c, data_d, data_cons
     mutate(sig = case_when(chisq < 0.01 ~ "***",
                            chisq < 0.05 ~ "**",
                            chisq < 0.1 ~ "*")) %>% 
-    mutate(frequency = count/total) %>% 
-    mutate(across("type", str_replace, "AS_ASTC\\b", colname1),
-           across("type", str_replace, "ASTC_AS\\b", colname2))
-  
-  
+    mutate(frequency = count/total)
   
   return(rbp_table_long)
   
 }
 
-add_sig_level <- function(df, rbp_table){
-  result <- df %>% 
-    group_by(current_motif) %>% 
-    left_join((subset(rbp_table, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-    select(-"Gene.name.y","type","count","total","chisq","frequency")
+add_sig_level <- function(df, rbp_table, mode){
+  if(mode == "total"){
+    result <- df %>% 
+      group_by(current_motif) %>% 
+      left_join((subset(rbp_table, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
+      select(-"Gene.name.y","type","count","total","chisq","frequency")
+  } else if(mode == "AS_ASTC"){
+    result <- df %>% 
+      group_by(current_motif) %>% 
+      left_join((subset(rbp_table, type == "AS_ASTC")), by = c("current_motif" = "RBP")) %>% 
+      select(-"Gene.name.y","type","count","total","chisq","frequency")
+  } else if(mode == "ASTC_AS"){
+    result <- df %>% 
+      group_by(current_motif) %>% 
+      left_join((subset(rbp_table, type == "ASTC_AS")), by = c("current_motif" = "RBP")) %>% 
+      select(-"Gene.name.y","type","count","total","chisq","frequency")
+  }
+  return(result)
+  
 }
+
 
 

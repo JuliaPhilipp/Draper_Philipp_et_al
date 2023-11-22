@@ -60,20 +60,20 @@ load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_eleme
 ```
 
 ```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF/hc_AF_ASTC_snp_lvl_prelim.RData")
+attach('~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF/hc_AF_ASTC_snp_lvl_prelim.RData', warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_chimp_AF <- collapsed_output_total_score
 
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF/hc_AF_ASTC_collapsed_new_mismatches.RData")
-collapsed_new_mismatches_human_chimp_AF <- hc_AF_ASTC_collapsed_new_mismatches
+detach()
+
 ```
 
 ```{r load SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF_AS/human_chimp_AF_AS_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF_AS/human_chimp_AF_AS_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_chimp_AF_SNV_bg <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_chimp_AF_SNV_bg <- collapsed_new_mismatches
+detach()
 ```
 
 ```{r load background, eval=FALSE, echo = FALSE, warning=FALSE, error=FALSE, message=FALSE}
@@ -150,7 +150,7 @@ data_spec_hc_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_chim
                         conservation_status = "species-specific",
                         filter=FALSE, event_type="AF")
 
-data_spec_hc_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_AF,
+data_spec_hc_AF_filtered<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_AF,
                         species1="human",species2="chimp", conservation_df=astc_hc_AF_top,
                         conservation_status = "species-specific",
                         filter=TRUE, event_type="AF")
@@ -161,13 +161,13 @@ data_spec_hc_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_chim
 
 ```{r human chimp AF SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 data_d_hc_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF_SNV_bg,
-                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
                            species1_AS=human_AS, species1_event_type = "AS",
                            species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
                            filter=FALSE, event_type="AF")
 
 data_d_hc_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF_SNV_bg,
-                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
                            species1_AS=human_AS, species1_event_type = "AS",
                            species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
                            filter=TRUE, event_type="AF")
@@ -175,7 +175,7 @@ data_d_hc_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human
 ```
 
 ```{r summary table}
-rbp_table_long_hc_AF <- summary_table(rnacmpt_ids, data_a_hc_AF_filtered, data_b_hc_AF_filtered, data_c_hc_AF_filtered, data_d_hc_AF_filtered, data_cons_hc_AF_filtered, data_spec_hc_AF_filtered, "human","chimp")
+rbp_table_long_hc_AF <- summary_table(rnacmpt_ids, data_a_hc_AF_filtered, data_b_hc_AF_filtered, data_c_hc_AF_filtered, data_d_hc_AF_filtered, data_cons_hc_AF_filtered, data_spec_hc_AF_filtered)
 ```
 
 
@@ -183,19 +183,19 @@ rbp_table_long_hc_AF <- summary_table(rnacmpt_ids, data_a_hc_AF_filtered, data_b
 
 ## load data
 ```{r load human orang AF, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_AF/human_orang_AF_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_AF/human_orang_AF_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_orang_AF <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_orang_AF <- collapsed_new_mismatches
+detach()
 ```
 
 ```{r load human orang AF SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_AF_AS/human_orang_AF_AS_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_AF_AS/human_orang_AF_AS_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_orang_AF_SNV_bg <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_orang_AF_SNV_bg <- collapsed_new_mismatches
+detach()
 ```
 
 ## sort data
@@ -263,7 +263,7 @@ data_spec_ho_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_oran
                         conservation_status = "species-specific",
                         filter=FALSE, event_type="AF")
 
-data_spec_ho_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_AF,
+data_spec_ho_AF_filtered<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_AF,
                         species1="human",species2="orang", conservation_df=astc_ho_AF_top,
                         conservation_status = "species-specific",
                         filter=TRUE, event_type="AF")
@@ -286,7 +286,7 @@ data_d_ho_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human
 ```
 
 ```{r summary table}
-rbp_table_long_ho_AF <- summary_table(rnacmpt_ids, data_a_ho_AF_filtered, data_b_ho_AF_filtered, data_c_ho_AF_filtered, data_d_ho_AF_filtered, data_cons_ho_AF_filtered, data_spec_ho_AF_filtered, "human","orang")
+rbp_table_long_ho_AF <- summary_table(rnacmpt_ids, data_a_ho_AF_filtered, data_b_ho_AF_filtered, data_c_ho_AF_filtered, data_d_ho_AF_filtered, data_cons_ho_AF_filtered, data_spec_ho_AF_filtered)
 ```
 
 
@@ -317,21 +317,19 @@ orang_AS <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap
 
 ## load data
 ```{r,  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/human_chimp_SE_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/human_chimp_SE_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_chimp_SE <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_chimp_SE <- collapsed_new_mismatches
-
+detach()
 ```
 
 ```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE_AS/human_chimp_SE_AS_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE_AS/human_chimp_SE_AS_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_chimp_SE_SNV_bg <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_chimp_SE_SNV_bg <- collapsed_new_mismatches
-
+detach()
 ```
 
 ## sort data
@@ -422,7 +420,7 @@ data_d_hc_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human
 ```
 
 ```{r summary table}
-rbp_table_long_hc_SE <- summary_table(rnacmpt_ids, data_a_hc_SE_filtered, data_b_hc_SE_filtered, data_c_hc_SE_filtered, data_d_hc_SE_filtered, data_cons_hc_SE_filtered, data_spec_hc_SE_filtered, "human","chimp")
+rbp_table_long_hc_SE <- summary_table(rnacmpt_ids, data_a_hc_SE_filtered, data_b_hc_SE_filtered, data_c_hc_SE_filtered, data_d_hc_SE_filtered, data_cons_hc_SE_filtered, data_spec_hc_SE_filtered)
 ```
 
 
@@ -430,21 +428,19 @@ rbp_table_long_hc_SE <- summary_table(rnacmpt_ids, data_a_hc_SE_filtered, data_b
 
 ## load data
 ```{r,  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_SE/human_orang_SE_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_SE/human_orang_SE_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_orang_SE <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_orang_SE <- collapsed_new_mismatches
-
+detach()
 ```
 
 ```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_SE_AS/human_orang_SE_AS_variant_calling_data_SNP_level.RData")
+attach("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_orang_SE_AS/human_orang_SE_AS_variant_calling_data_SNP_level.RData", warn.conflicts = FALSE)
 
 collapsed_output_total_score_human_orang_SE_SNV_bg <- collapsed_output_total_score
 
-collapsed_new_mismatches_human_orang_SE_SNV_bg <- collapsed_new_mismatches
-
+detach()
 ```
 
 ## sort data
@@ -536,216 +532,57 @@ data_d_ho_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human
 ```
 
 ```{r summary table}
-rbp_table_long_ho_SE <- summary_table(rnacmpt_ids, data_a_ho_SE_filtered, data_b_ho_SE_filtered, data_c_ho_SE_filtered, data_d_ho_SE_filtered, data_cons_ho_SE_filtered, data_spec_ho_SE_filtered, "human","orang")
+rbp_table_long_ho_SE <- summary_table(rnacmpt_ids, data_a_ho_SE_filtered, data_b_ho_SE_filtered, data_c_ho_SE_filtered, data_d_ho_SE_filtered, data_cons_ho_SE_filtered, data_spec_ho_SE_filtered)
 ```
 
 
 ## add significance based on prop test
 ```{r add significance levels to final data a tables, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_a_hc_AF_sig <- data_a_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
+data_a_list <- list(data_a_hc_AF, data_a_ho_AF, data_a_hc_SE, data_a_ho_SE)
+data_b_list <- list(data_b_hc_AF, data_b_ho_AF, data_b_hc_SE, data_b_ho_SE)
+data_c_list <- list(data_c_hc_AF, data_c_ho_AF, data_c_hc_SE, data_c_ho_SE)
+data_d_list <- list(data_d_hc_AF, data_d_ho_AF, data_d_hc_SE, data_d_ho_SE)
+data_cons_list <- list(data_cons_hc_AF, data_cons_ho_AF, data_cons_hc_SE, data_cons_ho_SE)
+data_spec_list <- list(data_spec_hc_AF, data_spec_ho_AF, data_spec_hc_SE, data_spec_ho_SE)
 
-data_a_hc_AF_sig <- add_sig_level(data_a_hc_AF, rbp_table)
+rbp_list <- list(rbp_table_long_hc_AF, rbp_table_long_ho_AF, rbp_table_long_hc_SE, rbp_table_long_ho_SE)
 
-data_a_ho_AF_sig <- data_a_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
 
-data_a_hc_SE_sig <- data_a_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
+# mode total = using AS_ASTC_total for frequency/sig
+data_a_sig <- mapply(add_sig_level, data_a_list, rbp_list, mode="total", SIMPLIFY = FALSE)
+data_b_sig <- mapply(add_sig_level, data_b_list, rbp_list, mode="total", SIMPLIFY = FALSE)
+data_c_sig <- mapply(add_sig_level, data_c_list, rbp_list, mode="total", SIMPLIFY = FALSE)
+data_d_sig <- mapply(add_sig_level, data_d_list, rbp_list, mode="total", SIMPLIFY = FALSE)
+data_cons_sig <- mapply(add_sig_level, data_cons_list, mode="total", rbp_list, SIMPLIFY = FALSE)
+data_spec_sig <- mapply(add_sig_level, data_spec_list, mode="total", rbp_list, SIMPLIFY = FALSE)
 
-data_a_ho_SE_sig <- data_a_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-```
-
-```{r add significance levels to final data b tables, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_b_hc_AF_sig <- data_b_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_b_ho_AF_sig <- data_b_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_b_hc_SE_sig <- data_b_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_b_ho_SE_sig <- data_b_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-```
-
-```{r add significance levels to final data c tables, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_c_hc_AF_sig <- data_c_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "ASTC_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_c_ho_AF_sig <- data_c_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "ASTC_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_c_hc_SE_sig <- data_c_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "ASTC_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_c_ho_SE_sig <- data_c_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "ASTC_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-```
-
-```{r add significance levels to final data d tables, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-# this just adds NAs because data d are as/as tables used as comparison
-data_d_hc_AF_sig <- data_d_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "AS_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_d_ho_AF_sig <- data_d_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "AS_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_d_hc_SE_sig <- data_d_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "AS_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_d_ho_SE_sig <- data_d_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "AS_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-```
-
-```{r add significance levels to final cons data tables, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_cons_hc_AF_sig <-  data_cons_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_cons_hc_SE_sig <- data_cons_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_cons_ho_AF_sig <- data_cons_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_cons_ho_SE_sig <- data_cons_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-```
-
-```{r add significance levels to final spec data tables, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_spec_hc_AF_sig <-  data_spec_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_spec_hc_SE_sig <- data_spec_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_spec_ho_AF_sig <- data_spec_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_spec_ho_SE_sig <- data_spec_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "ASTC_cons")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-```
-
-```{r add significance levels to final data a tables individual sig, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 # add signifcance levels from comparison of h_ASTC_c_AS to AS_AS, not the AS_ASTC_total
-data_a_hc_AF_ind_sig <- data_a_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "h_ASTC_c_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
+data_a_ind_sig <- mapply(add_sig_level, data_a_list, rbp_list, mode="AS_ASTC", SIMPLIFY = FALSE)
 
-data_a_ho_AF_ind_sig <- data_a_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "h_ASTC_c_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_a_hc_SE_ind_sig <- data_a_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "h_ASTC_c_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_a_ho_SE_ind_sig <- data_a_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "h_ASTC_c_AS")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
+# add signifcance levels from comparison of h_AS_c_ASTCto AS_AS, not the AS_ASTC_total
+data_b_ind_sig <- mapply(add_sig_level, data_b_list, rbp_list, mode="ASTC_AS", SIMPLIFY = FALSE)
 
 ```
 
-```{r add significance levels to final data b tables individual sig, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-# add signifcance levels from comparison of h_AS_c_ASTC to AS_AS, not the AS_ASTC_total
 
-data_b_hc_AF_ind_sig <- data_b_hc_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_AF, type == "h_AS_c_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_b_ho_AF_ind_sig <- data_b_ho_AF %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_AF, type == "h_AS_c_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-data_b_hc_SE_ind_sig <- data_b_hc_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_hc_SE, type == "h_AS_c_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
- data_b_ho_SE_ind_sig <- data_b_ho_SE %>% 
-  group_by(current_motif) %>% 
-  left_join((subset(rbp_table_long_ho_SE, type == "h_AS_c_ASTC")), by = c("current_motif" = "RBP")) %>% 
-  select(-"Gene.name.y","type","count","total","chisq","frequency")
-
-```
 
 # all comparisons and event types into one plot
 ```{r combine all observations, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_a_combined <- rbind(data_a_hc_AF_sig, data_a_hc_SE_sig, data_a_ho_AF_sig, data_a_ho_SE_sig)
+data_a_combined <- do.call(rbind, data_a_sig)
 
-data_b_combined <- rbind(data_b_hc_AF_sig, data_b_hc_SE_sig, data_b_ho_AF_sig, data_b_ho_SE_sig)
+data_b_combined <- do.call(rbind, data_b_sig)
 
-data_c_combined <- rbind(data_c_hc_AF_sig, data_c_hc_SE_sig, data_c_ho_AF_sig, data_c_ho_SE_sig)
+data_c_combined <- do.call(rbind, data_c_sig)
 
-data_d_combined <- rbind(data_d_hc_AF_sig, data_d_hc_SE_sig, data_d_ho_AF_sig, data_d_ho_SE_sig)
+data_d_combined <- do.call(rbind, data_c_sig)
 
-data_cons_combined <- rbind(data_cons_hc_AF_sig, data_cons_hc_SE_sig, data_cons_ho_AF_sig, data_cons_ho_SE_sig)
+data_cons_combined <- do.call(rbind, data_cons_sig)
 
-data_spec_combined <- rbind(data_spec_hc_AF_sig, data_spec_hc_SE_sig, data_spec_ho_AF_sig, data_spec_ho_SE_sig)
+data_spec_combined <- do.call(rbind, data_spec_sig)
 
-data_a_ind_combined <- rbind(data_a_hc_AF_ind_sig, data_a_hc_SE_ind_sig, data_a_ho_AF_ind_sig, data_a_ho_SE_ind_sig)
+data_a_ind_combined <- do.call(rbind, data_a_ind_sig)
   
-data_b_ind_combined <- rbind(data_b_hc_AF_ind_sig, data_b_hc_SE_ind_sig, data_b_ho_AF_ind_sig, data_b_ho_SE_ind_sig)
+data_b_ind_combined <- do.call(rbind, data_b_ind_sig)
 
 
 ```

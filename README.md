@@ -17,7 +17,7 @@ JunctionCounts - a pipeline developed in the Sanfordlab - was run for event dete
 |Fig 1|filter_for_ASTC.Rmd |
 |Fig 2|remap_sym_heatmaps_fig.Rmd |
 |Fig 3|remap_background_conservation.Rmd, remap_conservation_plots.Rmd|
-|Fig 5|interactive_rbp_plots.Rmd|
+|Fig 5|rbp_plots.Rmd|
 |Supp Fig 1a|manhattan_distance_dist.Rmd|
 |Supp Fig 1b|map_stats.R|
 |Supp Fig 1c|genebody_coverage_plot.R |
