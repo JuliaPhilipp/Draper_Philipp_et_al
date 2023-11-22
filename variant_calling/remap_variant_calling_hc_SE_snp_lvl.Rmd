@@ -1,0 +1,2898 @@
+---
+title: "remap_variant_calling_hc_SE_SNP_level"
+author: "juphilip"
+date: "11/10/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load libraries}
+rm(list = ls())
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(reshape2)
+library(ggplot2)
+library(cowplot)
+library(mclust)
+library(ape)
+library(Biostrings)
+library(ggpmisc)
+library(stringr)
+library(testit)
+library(cowplot)
+theme_set(theme_cowplot())
+library(VennDiagram)
+```
+
+```{r load saved data}
+load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/human_chimp_SE_variant_calling_data_SNP_level.RData")
+
+load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE_AS/hc_SE_AS_collapsed_new_mismatches.RData")
+```
+
+```{r load astc data}
+# the all three group might not be super helpful
+# because I can only do a pairwise alignment?
+human_chimp_astc_in_one <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_at_least_one_hc.txt", header = FALSE, stringsAsFactors = FALSE) %>% 
+  filter(str_detect(V1, "SE"))
+
+human_chimp_astc <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_both_hc.txt", header = FALSE, stringsAsFactors = FALSE) %>% 
+  filter(str_detect(V1, "SE"))
+
+
+```
+
+```{r functions}
+compare.DNA2 <- function(x,y){
+    as.integer(x) == as.integer(y)
+}
+
+get_files <- function(x){
+  tryCatch(read.delim(x, header = TRUE, stringsAsFactors = FALSE, sep = "\t") %>% 
+             column_to_rownames("Pos") %>% 
+             t() %>% 
+             as.matrix(), error=function(e) NULL)}
+```
+
+# FASTA
+make fasta files from ortholog astc event ids
+
+```{r load fastas}
+human_strings <- readDNAStringSet("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/human_SE.fa", format = "fasta", use.names = T)
+
+chimp_strings <- readDNAStringSet("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/chimp_SE.fa", format = "fasta", use.names = T)
+
+# clean up names
+tmp_names <- str_replace(str_replace(sort(names(human_strings)), "\\(\\+\\)",""), "\\(\\-\\)", "")
+
+names(human_strings) <- str_replace(str_replace(names(human_strings), "\\(\\+\\)",""), "\\(\\-\\)", "")
+names(chimp_strings) <- str_replace(str_replace(names(chimp_strings), "\\(\\+\\)",""), "\\(\\-\\)", "")
+
+human_order <- match(tmp_names, names(human_strings))
+chimp_order <- match(tmp_names, names(chimp_strings))
+
+human_strings_ordered <- unique(human_strings[human_order])
+chimp_strings_ordered <- unique(chimp_strings[chimp_order])
+
+table(names(human_strings_ordered) == names(chimp_strings_ordered))
+```
+
+# MAN DIST
+named inner dist in this iteration of the pipeline
+```{r load manhattan distances}
+all_distance <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_chimp/all_distances.tsv", header = T, stringsAsFactors = F) %>% 
+  filter(comparison == "human_chimpanzee") %>% 
+  filter(event_type == "SE")
+
+all_distance_SE_events <- all_distance %>% 
+  filter(event_id %in% names(human_strings_ordered)) %>% 
+  arrange(desc(inner_dist)) %>% 
+  filter(!is.na(inner_dist))
+
+top <- all_distance_SE_events %>% 
+  head(n = 100) %>% 
+  select(event_id, inner_dist) %>% 
+  mutate(cat = "top")
+
+bottom <- all_distance_SE_events %>% 
+  tail(n = 100) %>% 
+  select(event_id, inner_dist) %>% 
+  mutate(cat = "bottom")
+
+mid <- all_distance_SE_events %>% 
+  filter(!event_id %in% top$event_id) %>% 
+  filter(!event_id %in% bottom$event_id) %>% 
+  select(event_id, inner_dist) %>% 
+  mutate(cat = "mid")
+
+hist(all_distance_SE_events$inner_dist)
+
+categorized_all_SE <- rbind(top, mid, bottom)
+
+```
+
+```{r top and bottom strings}
+top_human_strings <- human_strings_ordered[which(str_replace(str_replace(names(human_strings_ordered),"\\_included",""),"\\_excluded","") %in% top$event_id)]
+sum(width(top_human_strings))
+
+bottom_human_strings <- human_strings_ordered[which(str_replace(str_replace(names(human_strings_ordered),"\\_included",""),"\\_excluded","") %in% bottom$event_id)]
+sum(width(bottom_human_strings))
+
+top_chimp_strings <- chimp_strings_ordered[which(str_replace(str_replace(names(chimp_strings_ordered),"\\_included",""),"\\_excluded","") %in% top$event_id)]
+bottom_chimp_strings <- chimp_strings_ordered[which(str_replace(str_replace(names(chimp_strings_ordered),"\\_included",""),"\\_excluded","") %in% bottom$event_id)]
+```
+
+# PAIRWISE ALIGNMENT
+```{r pairwise alignment and mismatch information}
+SE_alignments <- list()
+SE_mismatches <- list()
+SE_indels <- list()
+SE_scores <- list()
+
+
+
+for (i in 1:length(human_strings_ordered)){
+  SE_alignments[[i]] <- pairwiseAlignment(human_strings_ordered[[i]], chimp_strings_ordered[[i]])
+  SE_mismatches[[i]] <- mismatchTable(SE_alignments[[i]])
+  SE_indels[[i]] <- indel(SE_alignments[[i]])
+  SE_scores[[i]] <- score(SE_alignments[[i]])
+}
+
+names(SE_scores) <- names(human_strings_ordered)
+names(SE_mismatches) <- names(human_strings_ordered)
+
+max(unlist(lapply(SE_mismatches, FUN=nrow)))
+min(unlist(lapply(SE_mismatches, FUN=nrow)))
+
+length(which(unlist(lapply(SE_mismatches, FUN=nrow)) == 0))
+length(which(unlist(lapply(SE_mismatches, FUN=nrow)) == 1))
+length(which(unlist(lapply(SE_mismatches, FUN=nrow)) == 2))
+max(unlist(SE_scores))
+min(unlist(SE_scores))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_alignment_scores.png", width = 8, height = 6, units = "in", res = 300)
+hist(unlist(SE_scores), breaks = 100, xlab = "Alignment score human/chimp per SE event")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_mismatches.png", width = 8, height = 6, units = "in", res= 300)
+hist(unlist(lapply(SE_mismatches, FUN=nrow)), breaks = 75, xlab = "Number of mismatches between human/chimp per SE event")
+dev.off()
+# that's a lot of mismatches
+
+# what to do with events with a lot of mismatches?
+# what to do with events with no mismatches?
+
+```
+
+```{r correlation between alignment scores and manhattan distance?}
+SE_variants <- data.frame(id = names(SE_scores), n_variants = unlist(lapply(SE_mismatches, FUN=nrow))) %>% 
+  separate(id, into = c("event_id"), sep = "\\_[ie]", extra = "drop") %>% 
+  rownames_to_column("is") %>% 
+  separate(is, into = c("nothing", "iso"), sep = "[0-9]\\_", extra = "drop") %>% 
+  select(c(event_id, n_variants))
+
+SE_score_frame <- data.frame(id = names(SE_scores), score = unlist(SE_scores)) %>% 
+  separate(id, into = c("event_id"), sep = "\\_[ie]", extra = "drop") %>% 
+  rownames_to_column("is") %>% 
+  separate(is, into = c("nothing","iso"), sep = "[0-9]\\_", extra = "drop") %>% 
+  select(c(event_id, score)) %>% 
+  left_join(categorized_all_SE, by = "event_id") %>% 
+  left_join(SE_variants, by = c("event_id")) %>% 
+  arrange(inner_dist)
+
+top_score <- SE_score_frame %>% 
+  filter(cat == "top") %>% 
+  mutate(group = "species-specific")
+
+bottom_score <- SE_score_frame %>% 
+  filter(cat == "bottom") %>% 
+  mutate(group = "conserved")
+
+test <- rbind(top_score, bottom_score)
+
+t_test <- t.test(top_score$score, bottom_score$score)
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_boxplot_alignment_score_manhattandist_top100.png", width = 4, height = 4, units = "in", res = 300)
+ggplot(test, aes(x=group, y=score)) +
+  geom_boxplot() +
+  ylab("Pairwise Alignment score") +
+  xlab("Manhattan Distance")+
+  annotate("text", x = 1.5, y = 2300, label = paste0("p.val = ",round(t_test$p.value, digits = 5)))
+dev.off()
+
+
+t_test <- t.test(top_score$n_variants, bottom_score$n_variants)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_boxplot_nvariants_manhattandist_top100.png", width = 4, height = 4, units = "in", res = 300)
+ggplot(test, aes(x=group, y=n_variants)) +
+  geom_boxplot() +
+  ylab("Number of variants") +
+  xlab("Manhattan Distance") +
+  annotate("text", x = 1.5, y = 40, label = paste0("p.val = ",round(t_test$p.value, digits = 5)))
+dev.off()
+
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/cor_SE_alignment_score_manhattan_dist.png", width = 4, height = 4, units = "in", res = 300)
+ggplot(SE_score_frame, aes(x=score, y=inner_dist)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+  xlim(c(0,3000))
+
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/cor_SE_num_variants_manhattan_dist.png", width = 4, height = 4, units = "in", res = 300)
+ggplot(SE_score_frame, aes(x=n_variants, y=inner_dist)) +
+  geom_point() +
+  geom_smooth(method = "lm", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+  xlim(c(0,50))
+dev.off()
+```
+
+# LOAD PWMs
+```{r get all pwms}
+# make sure to filter for human PWMs only
+all_pwms <- list.files("~/Documents/02_data/RNAcompete/PWMs/", full.names = TRUE)
+
+all_pwms_names <- str_replace(list.files("~/Documents/02_data/RNAcompete/PWMs/", full.names = F), "_top10align_pfm.txt", "")
+
+rnacmpt_ids <- read.delim("~/Documents/02_data/RNAcompete/rna_compete_ids.csv", sep = ",", stringsAsFactors = F, header = T) %>% 
+  filter(Species == "Homo_sapiens")
+
+all_pwms_human <- all_pwms[which(all_pwms_names %in% rnacmpt_ids$ID)]
+all_pwms_names_human <- all_pwms_names[which(all_pwms_names %in% rnacmpt_ids$ID)]
+
+pwms_list <- lapply(all_pwms_human, get_files)
+
+rownames_list <- c("A","C","G","T")
+for (i in 1:length(pwms_list)){
+  rownames(pwms_list[[i]]) <- rownames_list
+}
+
+names(pwms_list) <- all_pwms_names_human
+```
+
+```{r doublecheck strings}
+
+test_data <- list()
+for (i in 1:length(human_strings_ordered)){
+ test_data[[i]]<-alphabetFrequency(chimp_strings_ordered[[i]])
+}
+
+test_frame_h <- as.data.frame(do.call("rbind", test_data))
+rownames(test_frame_h) <- names(human_strings_ordered)
+
+test_data <- list()
+for (i in 1:length(chimp_strings_ordered)){
+ test_data[[i]]<-alphabetFrequency(chimp_strings_ordered[[i]])
+}
+
+test_frame_c <- as.data.frame(do.call("rbind", test_data))
+rownames(test_frame_c) <- names(chimp_strings_ordered)
+
+
+```
+
+# SNVs
+```{r new variant centric pwm loop}
+# make output object
+pwm_output_h <- list()
+pwm_output_o <- list()
+
+# loop
+for (i in 1:length(SE_mismatches)){
+  current_event <- names(SE_mismatches)[i]
+  # if any mismatches are reported, loop through them
+  tmp_output_h <- list()
+  tmp_output_c <- list()
+  if (nrow(SE_mismatches[[i]]) > 0){
+    for (k in 1:nrow(SE_mismatches[[i]])){
+      # position mismatch for human
+      tmp_tmp_output_h <- list()
+      tmp_tmp_output_c <- list()
+      pos_mismatch_h <- SE_mismatches[[i]][k,"PatternStart"]
+      pos_mismatch_c <- SE_mismatches[[i]][k,"SubjectStart"]
+      current_snp <- paste0(names(SE_mismatches)[[i]],"_",k)
+      for (j in 1:length(pwms_list)){
+        current_motif <- names(pwms_list)[j]
+        current_pwm <- pwms_list[[j]]
+        string_start_h <- pos_mismatch_h - ncol(pwms_list[[j]])
+        string_end_h <- pos_mismatch_h + ncol(pwms_list[[j]])
+        if (string_start_h < 1){
+          string_start_h <- 1
+        }
+        
+        if (string_end_h > length(human_strings_ordered[[i]])){
+          string_end_h <- length(human_strings_ordered[[i]])
+        }
+        
+        
+        string_start_c <- pos_mismatch_c - ncol(pwms_list[[j]])
+        string_end_c <- pos_mismatch_c + ncol(pwms_list[[j]])
+        
+        if(string_start_c < 1){
+          string_start_c <- 1
+        }
+        
+        if (string_end_c > length(chimp_strings_ordered[[i]])){
+          string_end_c <- length(chimp_strings_ordered[[i]])
+        }
+        
+        # pwm match
+        query_string_h <- human_strings_ordered[[i]][string_start_h:string_end_h]
+        query_string_c <- chimp_strings_ordered[[i]][string_start_c:string_end_c]
+        
+        tmp_h <- matchPWM(current_pwm, query_string_h, min.score = "80%", 
+                          with.score = T)
+        tmp_c <- matchPWM(current_pwm, query_string_c, min.score = "80%",
+                          with.score = T)
+        
+        if(nrow(mcols(tmp_h)) > 0){
+          tmp_tmp_output_h[[j]] <- data.frame(tmp_h, mcols(tmp_h), current_motif, current_snp)
+        }
+        if(nrow(mcols(tmp_c)) > 0){
+          tmp_tmp_output_c[[j]] <- data.frame(tmp_c, mcols(tmp_c), current_motif, current_snp)
+        }
+      }
+      tmp_output_h[[k]] <- do.call(rbind, tmp_tmp_output_h)
+      tmp_output_c[[k]] <- do.call(rbind, tmp_tmp_output_c)
+    }
+  }
+  pwm_output_h[[i]] <- tmp_output_h
+  pwm_output_o[[i]] <- tmp_output_c
+}
+
+names(pwm_output_h) <- names(human_strings_ordered)
+names(pwm_output_o) <- names(chimp_strings_ordered)
+
+save(pwm_output_h, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_human_pwms_out.RData")
+save(pwm_output_o, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_chimp_pwms_out.RData")
+```
+
+```{r snp nomenclature}
+snv_lookup_list <- list()
+
+for (i in 1:length(SE_mismatches)){
+  current_event <- names(SE_mismatches)[i]
+  # if any mismatches are reported, loop through them
+  tmp_output_snp <- list()
+  if (nrow(SE_mismatches[[i]]) > 0){
+    for (k in 1:nrow(SE_mismatches[[i]])){
+      # position mismatch for human
+      pos_mismatch_h <- SE_mismatches[[i]][k,"PatternStart"]
+      pos_mismatch_o <- SE_mismatches[[i]][k,"SubjectStart"]
+      pattern_h <- SE_mismatches[[i]][k,"PatternSubstring"]
+      pattern_o <- SE_mismatches[[i]][k,"SubjectSubstring"]
+      current_snp <- paste0(names(SE_mismatches)[[i]],"_",k)
+      
+      tmp_output_snp[[k]] <- data.frame(snp_id = current_snp, pos_h = pos_mismatch_h, pos_o = pos_mismatch_o, seq_h = pattern_h, seq_o = pattern_o)
+    }
+  }
+  snv_lookup_list[[i]] <- do.call(rbind, tmp_output_snp)
+}
+
+snv_lookup_df <- do.call(rbind, snv_lookup_list) %>% 
+  na.omit()
+```
+
+# SCORES
+```{r sum up the scores and calculate difference between species}
+all_scores <- data.frame(event_id = names(human_strings_ordered), scores_h = NA, scores_c = NA, diff = NA)
+for (i in 1:length(pwm_output_h)){
+  all_scores[i,2] <- sum(pwm_output_h[[i]]$score)
+  all_scores[i,3] <- sum(pwm_output_o[[i]]$score)
+  all_scores[i,4] <- all_scores[i,2] - all_scores[i,3]
+}
+```
+
+```{r collapse output for general analysis}
+new_pwm_output_h <- vector("list", length = length(pwm_output_h))
+new_pwm_output_c <- vector("list", length = length(pwm_output_o))
+
+for (i in 1:length(pwm_output_h)){
+  new_pwm_output_h[[i]] <- do.call(rbind, pwm_output_h[[i]]) 
+  new_pwm_output_c[[i]] <- do.call(rbind, pwm_output_o[[i]]) 
+}
+
+names(new_pwm_output_c) <- names(chimp_strings_ordered)[1:length(new_pwm_output_c)]
+names(new_pwm_output_h) <- names(human_strings_ordered)[1:length(new_pwm_output_h)]
+colnames(rnacmpt_ids)[2] <- "current_motif"
+
+new_new_pwm_output_h <- mapply(`[<-`, new_pwm_output_h, 'event_id', value = names(new_pwm_output_h), SIMPLIFY = FALSE)
+
+new_new_pwm_output_c <- mapply(`[<-`, new_pwm_output_c, 'event_id', value = names(new_pwm_output_c), SIMPLIFY = FALSE)
+
+collapsed_output_h <- do.call(rbind, new_new_pwm_output_h) %>% 
+  na.omit() %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  filter(Species == "Homo_sapiens") %>% 
+  mutate(source = "human")
+
+colnames(collapsed_output_h)[1] <- "tmp"
+
+collapsed_output_c <- do.call(rbind, new_new_pwm_output_c) %>% 
+  na.omit() %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  filter(Species == "Homo_sapiens") %>% 
+  mutate(source = "chimp")
+
+colnames(collapsed_output_c) <- colnames(collapsed_output_h)
+
+collapsed_output_total <- rbind(collapsed_output_h, collapsed_output_c) %>% 
+  mutate(score = as.numeric(score))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_not_very_meaningful_overview.png", height = 5, width = 14, units = "in", res = 300)
+ggplot(collapsed_output_total, aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+dev.off()
+
+# now devide this into conserved/ not conserved
+collapsed_output_total_score <- collapsed_output_total %>%
+  left_join(categorized_all_SE, by = "event_id") %>% 
+  unique() %>% 
+  filter(!is.na(inner_dist))
+
+write.table(collapsed_output_total_score, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/collapsed_output_total_score.tsv", row.names = FALSE, col.names = TRUE, quote = FALSE, sep = "\t")
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_RBP_overview_by_dist_top100.png", height = 5, width = 20, units = "in", res = 300)
+ggplot(collapsed_output_total_score, aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_grid(cols = vars(cat))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_RBP_overview_manhattan_dist_top100.png", height = 5, width = 15, units = "in", res = 300)
+ggplot(subset(collapsed_output_total_score, cat == "top" | cat == "bottom"), aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_grid(cols = vars(cat))
+dev.off()
+```
+
+```{r binding scores}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_total_scores.png", height = 4, width = 4, units = "in", res = 300)
+ggplot(collapsed_output_total, aes(x=source, y=score)) +
+  geom_col(aes(fill = source)) +
+  annotate("text", x = 1.5, y = 90000, label = "p.val = 0.7925")
+dev.off()
+
+sum(subset(collapsed_output_total, source == "human")$score)
+sum(subset(collapsed_output_total, source == "chimp")$score)
+
+t.test(subset(collapsed_output_total, source == "human")$score, subset(collapsed_output_total, source == "chimp")$score)
+
+collapsed_output_total_score$score <- as.numeric(collapsed_output_total_score$score)
+
+cat_labs <- c("conserved","species-specific")
+names(cat_labs) <- c("bottom","top")
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_total_scores_by_manhattan_top100.png", height = 5, width = 5, units = "in", res = 300)
+ggplot(subset(collapsed_output_total_score, cat == "top" | cat == "bottom"), aes(x=source, y=score)) +
+  geom_col(aes(fill = source)) +
+  facet_grid(cols = vars(cat), labeller = labeller(cat = cat_labs)) +
+  scale_fill_manual(values = c("#fc8d62","#66c2a5")) +
+  xlab("") +
+  ylab("Cumulative PWM score") +
+  theme(legend.title = element_blank(),
+        legend.position = c(0.05,0.8))
+dev.off()
+
+
+ggplot(subset(collapsed_output_total_score, cat == "top"), aes(x=source, y=score)) +
+  geom_col(aes(fill = source, y= ..count../100))
+
+score_summary <- data.frame(cat = c("bottom","bottom","top","top"), source = c("chimp","human","chimp","human"), score = c(sum(as.numeric(subset(collapsed_output_total_score, cat == "bottom" & source == "chimp")$score))/sum(width(bottom_chimp_strings)), sum(as.numeric(subset(collapsed_output_total_score, cat == "bottom" & source == "human")$score))/sum(width(bottom_human_strings)), sum(as.numeric(subset(collapsed_output_total_score, cat == "top" & source == "chimp")$score))/sum(width(top_chimp_strings)), sum(as.numeric(subset(collapsed_output_total_score, cat == "top" & source == "human")$score))/sum(width(top_human_strings))))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_total_scores_by_manhattan_norm_top100.png", height = 5, width = 8, units = "in", res = 300)
+ggplot(score_summary, aes(x=source, y=score)) +
+  geom_col(aes(fill = source)) +
+  facet_grid(cols = vars(cat))
+dev.off()
+
+#sum(as.numeric(subset(collapsed_output_total_score, cat == "top" & source == "human")$score))
+#sum(as.numeric(subset(collapsed_output_total_score, cat == "top" & source == "chimp")$score))
+
+#t.test(as.numeric(subset(collapsed_output_total_score, cat == "top" & source == "human")$score), as.numeric(subset(collapsed_output_total_score, cat == "top" & source == "chimp")$score))
+
+#t.test(as.numeric(subset(collapsed_output_total_score, cat == "bottom" & source == "human")$score), as.numeric(subset(collapsed_output_total_score, cat == "bottom" & source == "chimp")$score))
+
+#t.test(as.numeric(subset(collapsed_output_total_score, cat == "mid" & source == "human")$score), as.numeric(subset(collapsed_output_total_score, cat == "mid" & source == "chimp")$score))
+```
+
+```{r score differences on variant basis}
+# in contrast to last analysis where it was event basis
+all_test_rank_per_pwm <- collapsed_output_total_score %>% 
+  select(current_motif, event_id, current_snp, source, score, inner_dist) %>% 
+  complete(source, nesting(current_motif, event_id, current_snp), fill = list(score = 0)) %>% 
+  group_by(current_motif, event_id, current_snp, source) %>% 
+  summarize(sum_score = sum(score), inner_dist = na.omit(inner_dist)[1]) %>% 
+  ungroup() %>% 
+  group_by(current_motif, event_id, current_snp) %>% 
+  summarize(inner_dist = na.omit(inner_dist)[1], diff = sum_score[2]-sum_score[1]) %>% 
+  arrange(current_motif, desc(inner_dist)) %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dense_rank((-inner_dist))) %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  mutate(rank = factor(rank, levels = c(1:267)))
+
+all_test_one_rank <- collapsed_output_total_score %>% 
+  select(current_motif, event_id, current_snp, source, score, inner_dist) %>% 
+  complete(source, nesting(current_motif, event_id, current_snp), fill = list(score = 0)) %>% 
+  group_by(current_motif, event_id, current_snp, source) %>% 
+  summarize(sum_score = sum(score), inner_dist = na.omit(inner_dist)[1]) %>% 
+  ungroup() %>% 
+  group_by(current_motif, event_id) %>% 
+  summarize(inner_dist = na.omit(inner_dist)[1], diff = sum_score[2]-sum_score[1]) %>% 
+  arrange(current_motif, desc(inner_dist)) %>% 
+  ungroup() %>% 
+  mutate(rank = dense_rank((-inner_dist))) %>% 
+  left_join(rnacmpt_ids, by = "current_motif")
+
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_all_pwms.png", width = 10, height = 6, units = "in", res = 300)
+ggplot(all_test_rank_per_pwm, aes(y=diff, x=rank)) +
+  geom_point(aes(color=current_motif)) +
+  theme(legend.position = "None") +
+  xlab("Rank based on Manhattan Distance") +
+  ylab("Delta PWM score")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_all_pwms_eventID_ranked.png", width = 15, height = 8, units = "in", res = 300)
+ggplot(all_test_one_rank, aes(y=diff, x=rank)) +
+  geom_point(aes(color=current_motif)) +
+  theme(legend.position = "None")
+dev.off()
+
+
+all_rbps <- names(table(all_test_rank_per_pwm$current_motif))
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_pwm_score_vs_manhattan_rank_by_eventID_top100.pdf", height = 8, width = 8)
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  p1 <- ggplot(subset(all_test_one_rank, current_motif == all_rbps[i]), aes(y=diff, x=rank)) +
+    geom_point() +
+    theme(legend.position = "None") +
+    geom_smooth(method = "lm", formula = y ~ x) +
+    stat_poly_eq(formula = y ~ x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+    ylab(paste0("Delta PWM score (",rbp_name,")")) +
+    xlab("Rank based on Manhattan Distance") +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_pwm_score_vs_manhattan_rank_top100.pdf", height = 8, width = 8)
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  p1 <- ggplot(subset(all_test_rank_per_pwm, current_motif == all_rbps[i]), aes(y=diff, x=rank)) +
+    geom_point() +
+    theme(legend.position = "None") +
+    geom_smooth(method = "lm", formula = y ~ x) +
+    stat_poly_eq(formula = y ~ x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+    ylab(paste0("Delta PWM score (",rbp_name,")")) +
+    xlab("Rank based on Manhattan Distance") +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+```
+
+```{r assign z score to pwm binding score}
+tmp_all_normalized <- collapsed_output_total_score %>% 
+  select(current_motif, event_id, current_snp, source, score, inner_dist) %>% 
+  complete(source, nesting(current_motif, event_id, current_snp), fill = list(score = 0)) %>% 
+  group_by(current_motif, event_id, current_snp, source) %>% 
+  summarize(sum_score = sum(score), inner_dist = na.omit(inner_dist)[1])
+
+chimp_mean <- mean(subset(tmp_all_normalized, source == "chimp")$sum_score)
+chimp_sd <- sd(subset(tmp_all_normalized, source == "chimp")$sum_score)
+chimp_cutoff_pos <- chimp_mean + 2*chimp_sd
+chimp_cutoff_neg <- chimp_mean - 2*chimp_sd
+
+human_mean <- mean(subset(tmp_all_normalized, source == "human")$sum_score)
+human_sd <- sd(subset(tmp_all_normalized, source == "human")$sum_score)
+human_cutoff_pos <- human_mean + 2*human_sd
+human_cutoff_neg <- human_mean - 2*human_sd
+
+all_normalized_z <- tmp_all_normalized %>% 
+  group_by(current_motif, event_id, current_snp) %>% 
+  mutate(zscore = case_when(source == "human" ~ ((sum_score - human_mean)/human_sd),
+                            source == "chimp" ~ ((sum_score - chimp_mean)/chimp_sd))) %>% 
+  mutate(sig = case_when(zscore > 2 | zscore < -2 ~ "sig",
+                         TRUE ~ "not_sig"))
+
+
+all_normalized_diff <- all_normalized_z %>% 
+  summarize(inner_dist = na.omit(inner_dist)[1], diff = sum_score[2]-sum_score[1], sig = paste0(sig[1],"_",sig[2])) %>% 
+  arrange(current_motif, desc(inner_dist)) %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dense_rank((-inner_dist))) %>% 
+  left_join(rnacmpt_ids, by = "current_motif")
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_pwm_score_vs_manhattan_rank_zscore_version1.pdf", height = 8, width = 8)
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  p1 <- ggplot(subset(all_normalized_diff, current_motif == all_rbps[i]), aes(y=diff, x=rank)) +
+    geom_point() +
+    theme(legend.position = "None") +
+    geom_smooth(method = "lm", formula = y ~ x) +
+    stat_poly_eq(formula = y ~ x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+    ylab(paste0("Delta PWM score (",rbp_name,")")) +
+    xlab("Rank based on Manhattan Distance") +
+    facet_grid(vars(sig)) +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+```
+
+```{r assign zscore to delta binding score}
+tmp_all_normalized <- collapsed_output_total_score %>% 
+  select(current_motif, event_id, current_snp, source, score, inner_dist) %>% 
+  complete(source, nesting(current_motif, event_id, current_snp), fill = list(score = 0)) %>% 
+  group_by(current_motif, event_id, current_snp, source) %>% 
+  summarize(sum_score = sum(score), inner_dist = na.omit(inner_dist)[1]) %>% 
+  ungroup() %>% 
+  group_by(current_motif, event_id, current_snp) %>% 
+  summarize(inner_dist = na.omit(inner_dist)[1], diff = sum_score[2]-sum_score[1])
+
+diff_mean <- mean(tmp_all_normalized$diff)
+diff_sd <- sd(tmp_all_normalized$diff)
+
+categorized_all_SE_small <- categorized_all_SE %>% 
+  select(event_id, cat)
+
+all_normalized_z2 <- tmp_all_normalized %>% 
+  mutate(zscore = (diff -diff_mean)/diff_sd) %>% 
+  mutate(sig = case_when(zscore > 2 | zscore < -2 ~ "sig",
+                         TRUE ~ "not_sig")) %>% 
+  arrange(current_motif, desc(inner_dist)) %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dense_rank((-inner_dist))) %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  left_join(categorized_all_SE_small, by = "event_id")
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_pwm_score_vs_manhattan_rank_zscore_version2_updated.pdf", height = 8, width = 8)
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  p1 <- ggplot(subset(all_normalized_z2, current_motif == all_rbps[i]), aes(y=diff, x=rank)) +
+    geom_point() +
+    theme(legend.position = "None") +
+    geom_smooth(method = "lm", formula = y ~ x) +
+    stat_poly_eq(formula = y ~ x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+    ylab(paste0("Delta PWM score (",rbp_name,")")) +
+    xlab("Rank based on Manhattan Distance") +
+    facet_grid(vars(sig)) +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+
+
+
+ggplot(subset(all_normalized_z2, sig == "sig"), aes(x=diff)) +
+  geom_density() +
+  facet_grid(rows = vars(cat))
+
+ggplot(subset(all_normalized_z2, cat == "top" | cat == "bottom"), aes(x=diff)) +
+  geom_density() +
+  facet_grid(rows = vars(cat))
+ks.test(subset(all_normalized_z2, cat == "top")$diff, subset(all_normalized_z3, cat == "bottom")$diff)
+
+ggplot(subset(all_normalized_z2, cat == "top" | cat == "bottom"), aes(x=diff, group = cat, color= cat)) +
+  geom_density()
+ks.test(subset(all_normalized_z3, cat == "top")$diff, subset(all_normalized_z3, cat == "bottom")$diff)
+t.test(subset(all_normalized_z3, cat == "top")$diff, subset(all_normalized_z3, cat == "bottom")$diff)
+
+ggplot(all_normalized_z2, aes(x=diff)) +
+  geom_density()
+
+ggplot(all_normalized_z2, aes(x=zscore)) +
+  geom_density() +
+  geom_vline(xintercept = -1)
+
+ggplot(all_normalized_z3, aes(x=zscore)) +
+  geom_density() +
+  geom_vline(xintercept = c(-2,2))
+
+ggplot(all_normalized_z3, aes(x=diff)) +
+  geom_density() +
+  geom_vline(xintercept = c(-2,2))
+
+ggplot(subset(all_normalized_z3, sig == "sig" & cat == "top"), aes(x=diff)) +
+  geom_density()
+
+ggplot(subset(all_normalized_z3, sig == "sig" & cat == "bottom"), aes(x=diff)) +
+  geom_density()
+
+ggplot(subset(all_normalized_z3, sig == "sig"), aes(x=inner_dist, y = diff, color = cat)) +
+  geom_point()
+
+
+ggplot(all_normalized_z3, aes(x=inner_dist, y = diff, color = sig)) +
+  geom_point()
+
+
+```
+
+```{r make zscore cutoff for each RBP separately}
+all_normalized_z3 <- tmp_all_normalized %>% 
+    group_by(current_motif) %>% 
+    mutate(mean = mean(diff, na.rm = TRUE), sd = sd(diff)) %>% 
+    mutate(zscore = (diff - mean)/sd) %>% 
+    mutate(sig = case_when(zscore > 2 | zscore < -2 ~ "sig", TRUE ~ "not_sig")) %>% 
+    left_join(rnacmpt_ids, by = "current_motif") %>% 
+    mutate(rank = dense_rank((-inner_dist))) %>% 
+    left_join(categorized_all_SE_small, by = "event_id")
+
+write.table(all_normalized_z3, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/all_normalzed_z3.tsv", col.names = TRUE, row.names = FALSE, quote = FALSE, sep="\t")
+
+ggplot(subset(all_normalized_z3, sig == "sig"), aes(x=diff)) +
+  geom_density() +
+  facet_grid(rows = vars(cat))
+
+ggplot(subset(all_normalized_z3, cat == "top" | cat == "bottom"), aes(x=diff)) +
+  geom_density() +
+  facet_grid(rows = vars(cat))
+ks.test(subset(all_normalized_z3, cat == "top")$diff, subset(all_normalized_z3, cat == "bottom")$diff)
+
+ggplot(subset(all_normalized_z3, cat == "top" | cat == "bottom"), aes(x=diff, group = cat, color= cat)) +
+  geom_density() +
+  scale_color_manual(values = c("blue","gold"), label = c("conserved","species-specific")) +
+  xlab("deltaPWMscore") +
+  theme(legend.title = element_blank())
+
+ks.test(subset(all_normalized_z3, cat == "top")$diff, subset(all_normalized_z3, cat == "bottom")$diff)
+t.test(subset(all_normalized_z3, cat == "top")$diff, subset(all_normalized_z3, cat == "bottom")$diff)
+
+
+ggplot(subset(all_normalized_z3, sig == "sig" & cat == "top"), aes(x=diff)) +
+  geom_density()
+
+ggplot(subset(all_normalized_z3, sig == "sig" & cat == "bottom"), aes(x=diff)) +
+  geom_density()
+
+ggplot(subset(all_normalized_z3, sig == "sig"), aes(x=inner_dist, y = diff, color = cat)) +
+  geom_point() +
+  geom_smooth(method='lm', formula= y~x)
+
+ggplot(all_normalized_z3, aes(x=inner_dist, y = diff, color = sig)) +
+  geom_point()
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_pwm_score_vs_manhattan_rank_zscore_version3.pdf", height = 8, width = 8)
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  p1 <- ggplot(subset(all_normalized_z3, current_motif == all_rbps[i]), aes(y=diff, x=rank)) +
+    geom_point() +
+    theme(legend.position = "None") +
+    geom_smooth(method = "lm", formula = y ~ x) +
+    stat_poly_eq(formula = y ~ x, 
+                aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+                parse = TRUE) +
+    ylab(paste0("Delta PWM score (",rbp_name,")")) +
+    xlab("Rank based on Manhattan Distance") +
+    facet_grid(vars(sig)) +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+
+```
+
+this is not working right now
+```{r distribution of delta scores between conserved and species specific events}
+all_test_man <- all_normalized_z3
+
+t_test <- t.test(subset(all_test_man, cat = "top")$diff, subset(all_test_man, cat == "bottom")$diff)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_score_distribution_conserved_species_sp.png", width = 5, height = 4, units = "in", res = 300)
+ggplot(subset(all_test_man, cat == "top" | cat == "bottom"), aes(x=diff)) +
+  geom_histogram(aes(fill = cat)) +
+  facet_grid(cols = vars(cat)) +
+  annotate("text", label = paste0("pvalue < ",round(t_test$p.value, digits = 5)), x=Inf, y=300, hjust=2, vjust=0)
+dev.off()
+
+```
+
+# DISTRIBUTION OF MISMATCHES
+
+```{r distribution of mismatches}
+collapsed_mismatches <- do.call(rbind, SE_mismatches) %>% 
+  mutate(snv = paste0(PatternSubstring,SubjectSubstring))
+
+new_mismatches <- list()
+for (i in 1:length(SE_mismatches)){
+  if(nrow(SE_mismatches[[i]]) > 0){
+    new_mismatches[[i]] <- SE_mismatches[[i]]
+  }
+}
+names(new_mismatches) <- names(SE_mismatches)[1:length(new_mismatches)]
+
+new_new_mismatches <- mapply(`[<-`, new_mismatches, 'event_id', value = names(new_mismatches), SIMPLIFY = TRUE)
+
+collapsed_new_mismatches <- do.call("rbind", new_new_mismatches) %>% 
+  na.omit() %>% 
+  rownames_to_column("is") %>% 
+  separate(is, into = c("nothing","tmp"), sep = "[0-9]\\_") %>% 
+  separate(tmp, into = c("iso"), sep = "\\.", extra = "drop") %>% 
+  separate(event_id, into = c("event","not"), sep = "\\_[ei]") %>% 
+  select(-nothing, -not) %>% 
+  mutate(event_id = event) %>% 
+  left_join(categorized_all_SE, by = "event_id") %>% 
+  mutate(snv = paste0(PatternSubstring, SubjectSubstring)) %>% 
+  filter(!str_detect(snv,"human"))
+  #filter(!is.na(inner_dist))
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_summary_snvs.png", height = 6, width = 8, units = "in", res = 300)
+ggplot(collapsed_mismatches, aes(x=snv)) +
+  stat_count()
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_summary_snvs_by_manhattan.png", height = 6, width = 12, units = "in", res = 300)
+ggplot(collapsed_new_mismatches, aes(x=snv))+
+  stat_count() +
+  facet_grid(cols = vars(cat))
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_top100.pdf", height = 4, width = 6)
+ggplot(subset(collapsed_new_mismatches, cat == "top" | cat == "bottom"), aes(x=snv)) +
+  stat_count(aes(group = cat, fill = cat), position = position_dodge2(preserve = "single")) +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved", "species-specific")) +
+  theme(legend.title = element_blank())
+dev.off()
+
+## SIGNIFICANCE?
+
+## normalizing by sequence length
+
+m1 <- data.frame(table(subset(collapsed_new_mismatches, cat == "top")$snv)/sum(width(top_human_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(table(subset(collapsed_new_mismatches, cat == "bottom")$snv)/sum(width(bottom_human_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- data.frame(table(hc_SE_AS_collapsed_new_mismatches$snv)/sum(width(human_SE_AS_strings_ordered_iso))) %>%  mutate(cat = "AS")
+m4 <- rbind(m1,m2)
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100.pdf", height = 4, width = 8)
+ggplot(m4, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = position_dodge2(preserve = "single")) +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank())
+  
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100_w_AS.pdf", height = 4, width = 8)
+ggplot(m4, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = position_dodge2(preserve = "single")) +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank())
+  
+dev.off()
+
+# normalize to chimp sequence length
+m1 <- data.frame(table(subset(collapsed_new_mismatches, cat == "top")$snv)/sum(width(top_chimp_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(table(subset(collapsed_new_mismatches, cat == "bottom")$snv)/sum(width(bottom_chimp_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- rbind(m1,m2)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_chimp_top100.png", height = 4, width = 8, units = "in", res = 300)
+ggplot(m3, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = "dodge") +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved", "species-specific")) +
+  theme(legend.title = element_blank())
+dev.off()
+# significance?
+
+
+# one bar each
+m1 <- data.frame(sum = sum(table(subset(collapsed_new_mismatches, cat == "top")$snv))/sum(width(top_human_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(sum = sum(table(subset(collapsed_new_mismatches, cat == "bottom")$snv))/sum(width(bottom_human_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- data.frame(sum = sum(table(hc_SE_AS_collapsed_new_mismatches$snv))/sum(width(human_SE_AS_strings_ordered_iso))) %>% 
+  mutate(cat = "AS")
+m4 <- rbind(m1,m2,m3)
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100_sum.pdf", height = 4, width = 5)
+ggplot(m4, aes(x=cat, y=sum, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = "dodge") +
+  ylab("# of SNVs/total sequence length") +
+  xlab("") +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved", "species-specific")) +
+  scale_x_discrete(labels = c("conserved","species-\nspecific"))+
+  theme(legend.title = element_blank())
+
+dev.off()
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100_sum_w_AS.pdf", height = 4, width = 6)
+ggplot(m4, aes(x=cat, y=sum, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = "dodge") +
+  ylab("# of SNVs/total sequence length") +
+  xlab("") +
+  scale_fill_manual(values = c("black","blue","gold"), labels = c("AS","conserved", "species-specific")) +
+  scale_x_discrete(labels = c("AS","conserved","species-\nspecific"))+
+  theme(legend.title = element_blank())
+
+dev.off()
+
+```
+
+```{r snvs relative to splice sites}
+five_prime_df <- collapsed_new_mismatches %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(PatternStart < 250)
+
+
+# need to adjust the number of events going into AS for freqpoly
+AS_string_sub <- human_SE_AS_strings_ordered_iso[sample( length(human_SE_AS_strings_ordered_iso), 100)]
+
+hc_SE_AS_collapsed_new_mismatches_sub <- hc_SE_AS_collapsed_new_mismatches %>% 
+  filter(event_id %in% names(AS_string_sub))
+
+five_prime_df_norm <- collapsed_new_mismatches %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches_sub %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(PatternStart < 250)
+
+# this would be relative to 3'SS
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/snv_density_dist_from_3ss.pdf", height = 4, width = 6)
+ggplot(five_prime_df, aes(x=PatternStart, color = cat)) +
+  geom_density() +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank()) +
+  xlab("Distance from 3'SS")
+dev.off()
+
+ggplot(five_prime_df, aes(x=PatternStart, color = event_id)) +
+  geom_density() +
+  #scale_color_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank(),
+        legend.position = "None") +
+  facet_grid(cols = vars(cat))
+
+ks.test(subset(five_prime_df, cat == "top")$PatternStart, subset(five_prime_df, cat == "bottom")$PatternStart)
+
+ks.test(subset(five_prime_df, cat == "top")$PatternStart, subset(five_prime_df, cat == "AS")$PatternStart)
+
+ks.test(subset(five_prime_df, cat == "bottom")$PatternStart, subset(five_prime_df, cat == "AS")$PatternStart)
+
+# the filtering and the windows really matter for the outcomes here
+# probably need to make a type of plot that is not density
+ggplot(five_prime_df, aes(x=PatternStart, color = cat)) +
+  geom_freqpoly(bins=25) +
+  #scale_color_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank())
+
+ggplot(five_prime_df_norm, aes(x=PatternStart, color = cat)) +
+  geom_freqpoly(bins=25) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank())
+
+
+
+# for the freqpoly, we'd need some kind of normalization
+# or downsampling of the AS events to the same number of events
+
+
+
+# relative to 3'SS is a little more tricky
+# need length of each exon and subtract
+exon_length <- data.frame(len = c(nchar(human_strings_ordered), nchar(human_SE_AS_strings_ordered_iso)), event_id = c(names(human_strings_ordered), names(human_SE_AS_strings_ordered_iso)))
+
+three_prime_df <- collapsed_new_mismatches %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  left_join(exon_length, by = "event_id") %>% 
+  mutate(pos = PatternStart - len) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(pos > -250)
+
+
+# three prime df normalized
+# adjusted to 100 AS events / 200 exons
+exon_length_norm <- data.frame(len = c(nchar(human_strings_ordered), nchar(AS_string_sub)), event_id = c(names(human_strings_ordered), names(AS_string_sub)))
+
+three_prime_df_norm <- collapsed_new_mismatches %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches_sub %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  left_join(exon_length_norm, by = "event_id") %>% 
+  mutate(pos = PatternStart - len) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(pos > -250)
+
+##
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/snv_density_dist_from_5ss.pdf", height = 4, width = 6)
+ggplot(three_prime_df, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_density() +
+  xlab("Distance from 5'SS")
+  theme(legend.title = element_blank())
+dev.off()
+
+ks.test(subset(three_prime_df, cat == "top")$pos, subset(three_prime_df, cat == "bottom")$pos)
+
+ks.test(subset(three_prime_df, cat == "top")$pos, subset(three_prime_df, cat == "AS")$pos)
+
+ks.test(subset(three_prime_df, cat == "AS")$pos, subset(three_prime_df, cat == "bottom")$pos)
+
+ggplot(three_prime_df, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_freqpoly(bins=25) +
+  theme(legend.title = element_blank())
+
+ggplot(three_prime_df_norm, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_freqpoly(bins=25) +
+  theme(legend.title = element_blank())
+
+ggplot(three_prime_df, aes(x=pos, color = event_id)) +
+  geom_density() +
+  #scale_color_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank(),
+        legend.position = "None") +
+  facet_grid(cols = vars(cat))
+```
+
+
+```{r event defintion}
+human_ASTC <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_events_human.txt",header = FALSE, stringsAsFactors = FALSE) %>% 
+  filter(str_detect(V1, "SE"))
+
+human_AS <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/as_events/as_events_human.txt", header = FALSE, stringsAsFactors = FALSE) %>% 
+  filter(str_detect(V1, "SE"))
+
+chimp_ASTC <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/astc_events/astc_events_chimp.txt", header = FALSE, stringsAsFactors = FALSE) %>% 
+  filter(str_detect(V1,"SE"))
+
+chimp_AS <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/as_events/as_events_chimp.txt", header = FALSE, stringsAsFactors = FALSE) %>% 
+  filter(str_detect(V1, "SE"))
+```
+
+```{r AS ASTC snv analysis general}
+collapsed_new_mismatches_AS_ASTC <- collapsed_new_mismatches %>% 
+  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
+                              event_id %in% human_AS$V1 ~ "AS",
+                              TRUE ~ "neither"),
+         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
+                              event_id %in% chimp_AS$V1 ~ "AS",
+                              TRUE ~ "neither")) %>% 
+  filter(human_ET == "AS" & chimp_ET == "ASTC" | human_ET == "ASTC" & chimp_ET == "AS")
+
+
+ggplot(collapsed_new_mismatches_AS_ASTC, aes(x=snv)) +
+  stat_count()
+
+
+ggplot(collapsed_new_mismatches_AS_ASTC, aes(x=snv))+
+  stat_count() +
+  facet_grid(cols = vars(cat))
+
+# recategorize these events into top and bottom
+
+#png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_top100.png", height = 4, width = 6, units = "in", res = 300)
+# these top and bottom categories are gonna be BS
+ggplot(subset(collapsed_new_mismatches_AS_ASTC, cat == "top" | cat == "bottom"), aes(x=snv)) +
+  stat_count(aes(group = cat, fill = cat), position = "dodge")
+#dev.off()
+
+## SIGNIFICANCE?
+
+## normalizing by sequence length
+
+m1 <- data.frame(table(subset(collapsed_new_mismatches_AS_ASTC, cat == "top")$snv)/sum(width(top_human_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(table(subset(collapsed_new_mismatches_AS_ASTC, cat == "bottom")$snv)/sum(width(bottom_human_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- data.frame(table(hc_SE_AS_collapsed_new_mismatches$snv)/sum(width(human_SE_AS_strings_ordered_iso))) %>%  mutate(cat = "AS")
+m4 <- rbind(m1,m2,m3)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100.pdf", height = 4, width = 8)
+ggplot(m4, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = position_dodge2(preserve = "single")) +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank())
+  
+#dev.off()
+
+
+#png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100.png", height = 4, width = 8, units = "in", res = 300)
+ggplot(m3, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = position_dodge2(preserve = "single")) +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank())
+  
+#dev.off()
+
+
+# normalize to chimp sequence length
+m1 <- data.frame(table(subset(collapsed_new_mismatches, cat == "top")$snv)/sum(width(top_chimp_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(table(subset(collapsed_new_mismatches, cat == "bottom")$snv)/sum(width(bottom_chimp_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- rbind(m1,m2)
+
+#png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_chimp_top100.png", height = 4, width = 8, units = "in", res = 300)
+ggplot(m3, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = "dodge") +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved", "species-specific")) +
+  theme(legend.title = element_blank())
+#dev.off()
+# significance?
+
+
+# one bar each
+m1 <- data.frame(sum = sum(table(subset(collapsed_new_mismatches_AS_ASTC, cat == "top")$snv))/sum(width(top_human_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(sum = sum(table(subset(collapsed_new_mismatches_AS_ASTC, cat == "bottom")$snv))/sum(width(bottom_human_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- data.frame(sum = sum(table(hc_SE_AS_collapsed_new_mismatches$snv))/sum(width(human_SE_AS_strings_ordered_iso))) %>% 
+  mutate(cat = "AS")
+m4 <- rbind(m1,m2,m3)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100_sum_w_AS.pdf", height = 4, width = 6)
+ggplot(m4, aes(x=cat, y=sum, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = "dodge") +
+  ylab("# of SNVs/total sequence length") +
+  xlab("") +
+  scale_fill_manual(values = c("black","blue","gold"), labels = c("AS","conserved", "species-specific")) +
+  scale_x_discrete(labels = c("AS","conserved","species-\nspecific"))+
+  theme(legend.title = element_blank())
+
+#dev.off()
+
+```
+
+```{r AS ASTC snv analysis relative to ss}
+five_prime_df <- collapsed_new_mismatches_AS_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(PatternStart < 250)
+
+
+# need to adjust the number of events going into AS for freqpoly
+# this number will have to get adjusted again based on the number in the top and bottom pile 
+# but it probably won't be needed if we go for density plots
+AS_string_sub <- human_SE_AS_strings_ordered_iso[sample( length(human_SE_AS_strings_ordered_iso), 100)]
+
+hc_SE_AS_collapsed_new_mismatches_sub <- hc_SE_AS_collapsed_new_mismatches %>% 
+  filter(event_id %in% names(AS_string_sub))
+
+five_prime_df_norm <- collapsed_new_mismatches_AS_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches_sub %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(PatternStart < 250)
+
+# this would be relative to 3'SS
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/AS_ASTC_snv_density_dist_from_3ss.pdf", height = 4, width = 6)
+ggplot(five_prime_df, aes(x=PatternStart, color = cat)) +
+  geom_density() +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank()) +
+  xlab("Distance from 3'SS")
+dev.off()
+
+
+ks.test(subset(five_prime_df, cat == "top")$PatternStart, subset(five_prime_df, cat == "bottom")$PatternStart)
+
+ks.test(subset(five_prime_df, cat == "top")$PatternStart, subset(five_prime_df, cat == "AS")$PatternStart)
+
+ks.test(subset(five_prime_df, cat == "bottom")$PatternStart, subset(five_prime_df, cat == "AS")$PatternStart)
+
+# the filtering and the windows really matter for the outcomes here
+# probably need to make a type of plot that is not density
+ggplot(five_prime_df, aes(x=PatternStart, color = cat)) +
+  geom_freqpoly(bins=25) +
+  #scale_color_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank())
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/snv_freq_dist_from_3ss.pdf", height = 4, width = 6)
+ggplot(five_prime_df_norm, aes(x=PatternStart, color = cat)) +
+  geom_freqpoly(bins=25) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank())
+#dev.off()
+
+
+# for the freqpoly, we'd need some kind of normalization
+# or downsampling of the AS events to the same number of events
+
+
+
+# relative to 3'SS is a little more tricky
+# need length of each exon and subtract
+exon_length <- data.frame(len = c(nchar(human_strings_ordered), nchar(human_SE_AS_strings_ordered_iso)), event_id = c(names(human_strings_ordered), names(human_SE_AS_strings_ordered_iso)))
+
+three_prime_df <- collapsed_new_mismatches_AS_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  left_join(exon_length, by = "event_id") %>% 
+  mutate(pos = PatternStart - len) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(pos > -250)
+
+
+# three prime df normalized
+# adjusted to 100 AS events / 200 exons
+exon_length_norm <- data.frame(len = c(nchar(human_strings_ordered), nchar(AS_string_sub)), event_id = c(names(human_strings_ordered), names(AS_string_sub)))
+
+three_prime_df_norm <- collapsed_new_mismatches_AS_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches_sub %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  left_join(exon_length_norm, by = "event_id") %>% 
+  mutate(pos = PatternStart - len) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(pos > -250)
+
+##
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/AS_ASTC_snv_density_dist_from_5ss.pdf", height = 4, width = 6)
+ggplot(three_prime_df, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_density() +
+  xlab("Distance from 5'SS") +
+  theme(legend.title = element_blank())
+#dev.off()
+
+ks.test(subset(three_prime_df, cat == "top")$pos, subset(three_prime_df, cat == "bottom")$pos)
+
+ks.test(subset(three_prime_df, cat == "top")$pos, subset(three_prime_df, cat == "AS")$pos)
+
+ks.test(subset(three_prime_df, cat == "AS")$pos, subset(three_prime_df, cat == "bottom")$pos)
+
+ggplot(three_prime_df, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_freqpoly(bins=25) +
+  theme(legend.title = element_blank())
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/snv_freq_dist_from_5ss.pdf", height = 4, width = 6)
+ggplot(three_prime_df_norm, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_freqpoly(bins=25) +
+  theme(legend.title = element_blank())
+#dev.off()
+
+```
+
+```{r ASTC ASTC snv analysis general}
+collapsed_new_mismatches_ASTC_ASTC <- collapsed_new_mismatches %>% 
+  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
+                              event_id %in% human_AS$V1 ~ "AS",
+                              TRUE ~ "neither"),
+         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
+                              event_id %in% chimp_AS$V1 ~ "AS",
+                              TRUE ~ "neither")) %>% 
+  filter(human_ET == "ASTC" & chimp_ET == "ASTC")
+
+
+ggplot(collapsed_new_mismatches_ASTC_ASTC, aes(x=snv)) +
+  stat_count()
+
+
+ggplot(collapsed_new_mismatches_ASTC_ASTC, aes(x=snv))+
+  stat_count() +
+  facet_grid(cols = vars(cat))
+
+# recategorize these events into top and bottom
+
+#png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_top100.png", height = 4, width = 6, units = "in", res = 300)
+# these top and bottom categories are gonna be BS
+ggplot(subset(collapsed_new_mismatches_ASTC_ASTC, cat == "top" | cat == "bottom"), aes(x=snv)) +
+  stat_count(aes(group = cat, fill = cat), position = "dodge")
+#dev.off()
+
+## SIGNIFICANCE?
+
+## normalizing by sequence length
+
+m1 <- data.frame(table(subset(collapsed_new_mismatches_ASTC_ASTC, cat == "top")$snv)/sum(width(top_human_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(table(subset(collapsed_new_mismatches_ASTC_ASTC, cat == "bottom")$snv)/sum(width(bottom_human_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- data.frame(table(hc_SE_AS_collapsed_new_mismatches$snv)/sum(width(human_SE_AS_strings_ordered_iso))) %>%  mutate(cat = "AS")
+m4 <- rbind(m1,m2,m3)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100.pdf", height = 4, width = 8)
+ggplot(m4, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = position_dodge2(preserve = "single")) +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank())
+  
+#dev.off()
+
+
+#png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100.png", height = 4, width = 8, units = "in", res = 300)
+ggplot(m3, aes(x=Var1, y=Freq, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = position_dodge2(preserve = "single")) +
+  xlab("SNV") +
+  ylab("# of SNVs/total sequence length") +
+  scale_fill_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank())
+  
+#dev.off()
+
+
+
+# one bar each
+m1 <- data.frame(sum = sum(table(subset(collapsed_new_mismatches_ASTC_ASTC, cat == "top")$snv))/sum(width(top_human_strings))) %>% 
+  mutate(cat = "top")
+m2 <- data.frame(sum = sum(table(subset(collapsed_new_mismatches_ASTC_ASTC, cat == "bottom")$snv))/sum(width(bottom_human_strings))) %>% 
+  mutate(cat = "bottom")
+m3 <- data.frame(sum = sum(table(hc_SE_AS_collapsed_new_mismatches$snv))/sum(width(human_SE_AS_strings_ordered_iso))) %>% 
+  mutate(cat = "AS")
+m4 <- rbind(m1,m2,m3)
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_snvs_cons_vs_specific_normalized_human_top100_sum_w_AS.pdf", height = 4, width = 6)
+ggplot(m4, aes(x=cat, y=sum, group=cat)) +
+  geom_col(aes(group=cat, fill=cat), position = "dodge") +
+  ylab("# of SNVs/total sequence length") +
+  xlab("") +
+  scale_fill_manual(values = c("black","blue","gold"), labels = c("AS","conserved", "species-specific")) +
+  scale_x_discrete(labels = c("AS","conserved","species-\nspecific"))+
+  theme(legend.title = element_blank())
+
+#dev.off()
+```
+
+```{r ASTC ASTC snv analysis relative to ss}
+five_prime_df <- collapsed_new_mismatches_ASTC_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(PatternStart < 250)
+
+
+# need to adjust the number of events going into AS for freqpoly
+# this number will have to get adjusted again based on the number in the top and bottom pile 
+# but it probably won't be needed if we go for density plots
+AS_string_sub <- human_SE_AS_strings_ordered_iso[sample( length(human_SE_AS_strings_ordered_iso), 100)]
+
+hc_SE_AS_collapsed_new_mismatches_sub <- hc_SE_AS_collapsed_new_mismatches %>% 
+  filter(event_id %in% names(AS_string_sub))
+
+five_prime_df_norm <- collapsed_new_mismatches_ASTC_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches_sub %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(PatternStart < 250)
+
+# this would be relative to 3'SS
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/ASTC_ASTC_snv_density_dist_from_3ss.pdf", height = 4, width = 6)
+ggplot(five_prime_df, aes(x=PatternStart, color = cat)) +
+  geom_density() +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank()) +
+  xlab("Distance from 3'SS")
+dev.off()
+
+
+ks.test(subset(five_prime_df, cat == "top")$PatternStart, subset(five_prime_df, cat == "bottom")$PatternStart)
+
+ks.test(subset(five_prime_df, cat == "top")$PatternStart, subset(five_prime_df, cat == "AS")$PatternStart)
+
+ks.test(subset(five_prime_df, cat == "bottom")$PatternStart, subset(five_prime_df, cat == "AS")$PatternStart)
+
+# the filtering and the windows really matter for the outcomes here
+# probably need to make a type of plot that is not density
+ggplot(five_prime_df, aes(x=PatternStart, color = cat)) +
+  geom_freqpoly(bins=25) +
+  #scale_color_manual(values = c("blue","gold"), labels = c("conserved","species-specific")) +
+  theme(legend.title = element_blank())
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/snv_freq_dist_from_3ss.pdf", height = 4, width = 6)
+ggplot(five_prime_df_norm, aes(x=PatternStart, color = cat)) +
+  geom_freqpoly(bins=25) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  theme(legend.title = element_blank())
+#dev.off()
+
+
+# for the freqpoly, we'd need some kind of normalization
+# or downsampling of the AS events to the same number of events
+
+
+
+# relative to 3'SS is a little more tricky
+# need length of each exon and subtract
+exon_length <- data.frame(len = c(nchar(human_strings_ordered), nchar(human_SE_AS_strings_ordered_iso)), event_id = c(names(human_strings_ordered), names(human_SE_AS_strings_ordered_iso)))
+
+three_prime_df <- collapsed_new_mismatches_ASTC_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  left_join(exon_length, by = "event_id") %>% 
+  mutate(pos = PatternStart - len) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(pos > -250)
+
+
+# three prime df normalized
+# adjusted to 100 AS events / 200 exons
+exon_length_norm <- data.frame(len = c(nchar(human_strings_ordered), nchar(AS_string_sub)), event_id = c(names(human_strings_ordered), names(AS_string_sub)))
+
+three_prime_df_norm <- collapsed_new_mismatches_ASTC_ASTC[,1:15] %>% 
+  rbind((hc_SE_AS_collapsed_new_mismatches_sub %>% mutate(cat = "AS"))) %>% 
+  mutate(PatternStart = as.numeric(PatternStart)) %>% 
+  left_join(exon_length_norm, by = "event_id") %>% 
+  mutate(pos = PatternStart - len) %>% 
+  filter(cat == "top" | cat == "bottom" | cat == "AS") %>% 
+  filter(pos > -250)
+
+##
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/ASTC_ASTC_snv_density_dist_from_5ss.pdf", height = 4, width = 6)
+ggplot(three_prime_df, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_density() +
+  xlab("Distance from 5'SS") +
+  theme(legend.title = element_blank())
+dev.off()
+
+ks.test(subset(three_prime_df, cat == "top")$pos, subset(three_prime_df, cat == "bottom")$pos)
+
+ks.test(subset(three_prime_df, cat == "top")$pos, subset(three_prime_df, cat == "AS")$pos)
+
+ks.test(subset(three_prime_df, cat == "AS")$pos, subset(three_prime_df, cat == "bottom")$pos)
+
+ggplot(three_prime_df, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_freqpoly(bins=25) +
+  theme(legend.title = element_blank())
+
+#pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/snv_freq_dist_from_5ss.pdf", height = 4, width = 6)
+ggplot(three_prime_df_norm, aes(x=pos, color = cat)) +
+  scale_color_manual(values = c("black","blue","gold"), labels = c("AS","conserved","species-specific")) +
+  geom_freqpoly(bins=25) +
+  theme(legend.title = element_blank())
+#dev.off()
+
+```
+
+
+
+
+```{r indels}
+SE_in_list <- list()
+SE_del_list <- list()
+for (i in 1:length(SE_indels)){
+  SE_in_list[[i]] <- data.frame(insertion(SE_indels[[i]]))
+  SE_del_list[[i]] <- data.frame(deletion(SE_indels[[i]]))
+}
+names(SE_in_list) <- names(human_strings_ordered)
+names(SE_del_list) <- names(human_strings_ordered)
+
+SE_in_list_new <- list()
+SE_del_list_new <- list()
+
+for (i in 1:length(SE_in_list)){
+  if (nrow(SE_in_list[[i]]) > 0){
+    SE_in_list_new[[i]] <- SE_in_list[[i]]
+  } else{
+    SE_in_list_new[[i]] <- NA
+  }
+  if (nrow(SE_del_list[[i]]) > 0){
+    SE_del_list_new[[i]] <- SE_del_list[[i]]
+  } else{
+    SE_del_list_new[[i]] <- NA
+  }
+}
+
+names(SE_in_list_new) <- names(human_strings_ordered)
+names(SE_del_list_new) <- names(human_strings_ordered)
+
+SE_in_list_new_new <- mapply(`[<-`, SE_in_list_new, 'event_id', value = names(SE_in_list_new), SIMPLIFY = FALSE)
+SE_del_list_new_new <- mapply(`[<-`, SE_del_list_new, 'event_id', value = names(SE_del_list_new), SIMPLIFY = FALSE)
+
+collapsed_ins <- do.call(rbind, SE_in_list_new_new) %>% 
+  select(event_id, start, end, width) %>% 
+  mutate(type = "insertion") %>% 
+  mutate(start = as.numeric(start)) %>% 
+  mutate(end = as.numeric(end)) %>% 
+  mutate(width = as.numeric(width)) %>% 
+  na.omit() %>% 
+  mutate(is = event_id) %>% 
+  separate(is, into = c("nothing","iso"), sep = "[0-9]\\_") %>% 
+  separate(event_id, into = c("id"), sep = "\\_[ei]", extra = "drop") %>% 
+  mutate(event_id = id) %>% 
+  select(c(event_id, iso,start, end, width, type))
+
+collapsed_dels <- do.call(rbind, SE_del_list_new_new) %>% 
+  select(event_id, start, end, width) %>% 
+  mutate(type = "deletion") %>% 
+  mutate(start = as.numeric(start)) %>% 
+  mutate(end = as.numeric(end)) %>% 
+  mutate(width = as.numeric(width)) %>% 
+  na.omit() %>% 
+  mutate(is = event_id) %>% 
+  separate(is, into = c("nothing","iso"), sep = "[0-9]\\_") %>% 
+  separate(event_id, into = c("id"), sep = "\\_[ei]", extra = "drop") %>% 
+  mutate(event_id = id) %>% 
+  select(c(event_id, iso, start, end, width, type))
+
+collapsed_indels <- rbind(collapsed_ins, collapsed_dels) %>% 
+  left_join(categorized_all_SE, by = "event_id")
+
+average_width_del <- sum(collapsed_dels$width)/nrow(collapsed_dels)
+average_width_ins <- sum(collapsed_ins$width)/nrow(collapsed_ins)
+vline.data <- data.frame(z = c(average_width_del, average_width_ins), type = c("deletion","insertion"))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_width_indels_top100.png", height = 6, width = 4, units = "in", res = 300)
+ggplot(collapsed_indels, aes(x=width, fill = type)) +
+  geom_histogram(position = 'identity') +
+  facet_grid(rows = vars(type)) +
+  theme(legend.position = "None") +
+  geom_vline(aes(xintercept = z), vline.data)
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_width_indels_by_manhattan_top100.png", height = 6, width = 4, units = "in", res = 300)
+ggplot(subset(collapsed_indels, cat == "top" | cat == "bottom"), aes(x=width, fill = type)) +
+  geom_histogram(position = 'identity') +
+  facet_grid(rows = vars(type), cols = vars(cat), labeller = labeller(cat = cat_labs)) +
+  theme(legend.position = "None")
+dev.off()
+
+# by manhattan, normalized
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_width_indels_by_manhattan_norm_top_top100.png", height = 6, width = 2, units = "in", res = 300)
+ggplot(subset(collapsed_indels, cat == "top"), aes(x=width, fill=type)) +
+  geom_histogram(aes(y = ..count../sum(width(top_human_strings)))) +
+  facet_grid(rows = vars(type), cols = vars(cat)) +
+  theme(legend.position = "None")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_width_indels_by_manhattan_norm_bottom_top100.png", height = 6, width = 2, units = "in", res = 300)
+ggplot(subset(collapsed_indels, cat == "bottom"), aes(x=width, fill=type)) +
+  geom_histogram(aes(y= ..count../sum(width(bottom_human_strings)))) +
+  facet_grid(rows = vars(type), cols = vars(cat)) +
+  theme(legend.position = "None")
+dev.off()
+```
+
+```{r spatial distribution of snvs and indels}
+ggplot(collapsed_mismatches, aes(x=PatternStart)) +
+  geom_density()
+
+human_string_length <- data.frame(event_id = names(human_strings_ordered), width = width(human_strings_ordered))
+mismatch_table_for_plot <- snv_lookup_df %>% 
+  mutate(event = snp_id) %>% 
+  separate(event, into = c("event_id"), sep = "\\_[0-9]", extra = "drop") %>% 
+  left_join(human_string_length, by = "event_id") %>% 
+  mutate(rel_pos = pos_h/width) %>% 
+  mutate(type = "snv") %>% 
+  select(event_id, rel_pos, type)
+
+ggplot(mismatch_table_for_plot, aes(x=rel_pos)) +
+  geom_density()
+
+indel_table_for_plot <- collapsed_indels %>% 
+  left_join(human_string_length, by = "event_id") %>% 
+  mutate(rel_pos = start/width.y) %>% 
+  select(event_id, rel_pos, type) %>% 
+  filter(rel_pos < 1)
+  
+  
+final_table_for_plot <- rbind(mismatch_table_for_plot, indel_table_for_plot)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/location_mismatches.png", height = 4, width = 6, units = "in", res = 300)
+ggplot(final_table_for_plot, aes(x=rel_pos, group = type, color = type)) +
+  geom_density()
+dev.off()
+  
+```
+
+this might need work
+```{r spatial distribution of scores}
+all_normalized_z3
+```
+
+# ECDF PLOTS
+```{r ecdf plots}
+
+ks1 <- all_test_rank_per_pwm %>% 
+  left_join(categorized_all_SE, by = "event_id") %>% 
+  filter(cat == "top" )
+
+ks2 <- all_test_rank_per_pwm %>% 
+  left_join(categorized_all_SE, by = "event_id") %>% 
+  filter(cat == "bottom")
+
+ks_results <- ks.test(ks1$diff, ks2$diff, alternative = "less")
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_ecdf_all_cons_vs_spsp_top100.png", width = 6, height = 6, units = "in", res = 300)
+all_test_rank_per_pwm %>% 
+  left_join(categorized_all_SE, by = "event_id") %>% 
+  filter(cat == "top" | cat == "bottom") %>% 
+  ggplot(aes(x=diff, group = cat)) +
+  stat_ecdf(geom = "step", aes(color = cat), size = 1.3) +
+  scale_color_manual(values = c("blue","gold"), label = c("conserved","species-specific")) +
+  theme(legend.title = element_blank(), legend.position = c(0.8,0.2)) +
+  xlab("Delta PWM score") +
+  ylab("Cumulative Fraction") +
+  annotate("text", label = paste("p-value = ",round(ks_results$p.value, digits =4)), x=60 , y=0.06)
+dev.off()
+
+
+```
+
+```{r ecdf plot separately for each rbp}
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE_AS//pwm_output/SE_ecdf_per_rbp_top100.pdf")
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  
+  ks1 <-  all_test_rank_per_pwm %>% 
+    left_join(categorized_all_SE, by = "event_id") %>% 
+    filter(cat == "top" ) %>% 
+    filter(current_motif == all_rbps[i])
+  
+  ks2 <- all_test_rank_per_pwm %>% 
+    left_join(categorized_all_SE, by = "event_id") %>% 
+    filter(cat == "bottom") %>% 
+    filter(current_motif == all_rbps[i])
+  
+  if (has_error(ks.test(ks1$diff, ks2$diff), silent = TRUE)){
+    ks_results$p.value <-1
+  } else{
+    ks_results <- (ks.test(ks1$diff, ks2$diff))
+  }
+  
+  p1 <- all_test_rank_per_pwm %>% 
+    left_join(categorized_all_SE, by = "event_id") %>% 
+    filter(cat == "top" | cat == "bottom") %>% 
+    filter(current_motif == all_rbps[i]) %>% 
+    ggplot(aes(x=diff, group = cat)) +
+    stat_ecdf(geom = "step", aes(color = cat), size = 1.3) +
+    scale_color_manual(values = c("blue","gold"), label = c("conserved","species-specific")) +
+    theme(legend.title = element_blank(), legend.position = c(0.5,0.15)) +
+    ylab("Cumulative Fraction") +
+    annotate("text", label = paste("p-value = ",round(ks_results$p.value, digits =4)), x=Inf , y=0, hjust=2, vjust=0) +
+    xlab("Delta PWM score") +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+```
+
+```{r ecdf sig vs not sig}
+# try this with dataframe all normalized z
+ks1 <- all_normalized_z %>% 
+  filter(source == "human") %>% 
+  filter(sig == "sig")
+
+ks2 <- all_normalized_z %>% 
+  filter(source == "human") %>% 
+  filter(sig == "not_sig")
+
+ks_results <- ks.test(ks1$inner_dist, ks2$inner_dist)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//pwm_output/SE_ecdf_sig_notsig_vs_manhattan.png", height = 6, width = 6, units = "in", res = 300)
+all_normalized_z %>% 
+  filter(source == "human") %>% 
+  ggplot(aes(x=inner_dist, group = sig)) + 
+  stat_ecdf(geom = "step", aes(color = sig), size = 1.3) +
+  theme(legend.title = element_blank(), legend.position = c(0.5,0.2)) +
+  ylab("Cumulative Fraction") +
+  annotate("text", label = paste("p-value = 0.2412"), x=Inf , y=0, hjust=2, vjust=0) +
+  xlab("Manhattan Distance")
+dev.off()
+```
+
+```{r ecdf sig not sig for every rbp}
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//pwm_output/SE_ecdf_per_rbp_sig_notsig.pdf")
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  ks1 <- all_normalized_z %>% 
+    filter(source == "human") %>% 
+    filter(sig == "sig") %>% 
+    filter(current_motif == all_rbps[i])
+
+  ks2 <- all_normalized_z %>% 
+    filter(source == "human") %>% 
+    filter(sig == "not_sig") %>% 
+    filter(current_motif == all_rbps[i])
+  
+  if (has_error(ks.test(ks1$inner_dist, ks2$inner_dist), silent = TRUE)){
+    ks_results$p.value <-1
+  } else{
+    ks_results <- (ks.test(ks1$inner_dist, ks2$inner_dist))
+  }
+  
+  
+  p1 <- all_normalized_z %>% 
+    filter(current_motif == all_rbps[i]) %>% 
+    ggplot(aes(x=inner_dist, group = sig)) +
+    stat_ecdf(geom = "step", aes(color = sig), size = 1.3) +
+    theme(legend.title = element_blank(), legend.position = c(0.5,0.2)) +
+    ylab("Cumulative Fraction") +
+    annotate("text", label = paste("p-value = ",round(ks_results$p.value, digits =4)), x=Inf , y=0, hjust=2, vjust=0) +
+    xlab("Manhattan Distance") +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+```
+
+```{r ecdf all normalized diff }
+# try this with dataframe all normalized z
+ks1 <- all_normalized_z %>% 
+  filter(source == "human") %>% 
+  filter(sig == "sig")
+
+ks2 <- all_normalized_z %>% 
+  filter(source == "human") %>% 
+  filter(sig == "not_sig")
+
+ks_results <- ks.test(ks1$inner_dist, ks2$inner_dist)
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//pwm_output/SE_ecdf_sig_not_sig_vs_manhattan_basedonPWMscore.png", height = 6, width = 6, units = "in", res= 300)
+all_normalized_z %>% 
+  filter(source == "human") %>% 
+  ggplot(aes(x=inner_dist, group = sig)) + 
+  stat_ecdf(geom = "step", aes(color = sig), size = 1.3) +
+  theme(legend.title = element_blank(), legend.position = c(0.5,0.2)) +
+  ylab("Cumulative Fraction") +
+  annotate("text", label = paste("p-value < 2.2e-16"), x=Inf , y=0, hjust=2, vjust=0) +
+  xlab("Manhattan Distance")
+dev.off()
+```
+
+```{r ecdf for sig vs non sig based on zscores on delta pwm score}
+ks1 <- all_normalized_z2 %>% 
+  filter(sig == "sig")
+
+ks2 <- all_normalized_z2 %>% 
+  filter(sig == "not_sig")
+
+ks_results <- ks.test(ks1$inner_dist, ks2$inner_dist)
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//pwm_output/SE_ecdf_sig_not_sig_vs_manhattan_basedondeltaPWM.png", height = 6, width = 6, units = "in", res = 300)
+all_normalized_z2 %>% 
+  ggplot(aes(x=inner_dist, group = sig)) +
+  stat_ecdf(geom = "step", aes(color = sig), size = 1.3) +
+  theme(legend.title = element_blank(), legend.position = c(0.5,0.2)) +
+  ylab("Cumulative Fraction") +
+  annotate("text", label = paste("pvalue < 2.2e-16"), x=Inf, y=0, hjust=2, vjust=0) +
+  xlab("Manhattan Distance")
+dev.off()
+
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//pwm_output/SE_ecdf_per_rbp_sig_notsig_basedondeltaPWM.pdf")
+for (i in 1:length(all_rbps)){
+  rbp_name <- rnacmpt_ids[which(rnacmpt_ids$current_motif == all_rbps[i]),"Gene.name"]
+  ks1 <- all_normalized_z2 %>% 
+    filter(sig == "sig") %>% 
+    filter(current_motif == all_rbps[i])
+
+  ks2 <- all_normalized_z2 %>% 
+    filter(sig == "not_sig") %>% 
+    filter(current_motif == all_rbps[i])
+  
+  if (has_error(ks.test(ks1$inner_dist, ks2$inner_dist), silent = TRUE)){
+    ks_results$p.value <-1
+  } else{
+    ks_results <- (ks.test(ks1$inner_dist, ks2$inner_dist))
+  }
+  
+  
+  p1 <- all_normalized_z2 %>% 
+    filter(current_motif == all_rbps[i]) %>% 
+    ggplot(aes(x=inner_dist, group = sig)) +
+    stat_ecdf(geom = "step", aes(color = sig), size = 1.3) +
+    theme(legend.title = element_blank(), legend.position = c(0.5,0.2)) +
+    ylab("Cumulative Fraction") +
+    annotate("text", label = paste("p-value = ",round(ks_results$p.value, digits =4)), x=Inf , y=0, hjust=2, vjust=0) +
+    xlab("Manhattan Distance") +
+    ggtitle(rbp_name)
+  print(p1)
+}
+dev.off()
+```
+
+```{r trying out boxplot for the same purpose}
+# just to create the t-test object
+#t_test <- t.test(c(2,2,2,2), c(3,4,7,1))
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_test_boxplot_manhattan_z2.png", height = 5, width = 10, units = "in", res = 300)
+all_normalized_z2 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    ggplot(aes(y=inner_dist, x=Gene.name, fill=sig)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    #geom_point(aes(fill = sig), size = 1, shape = 21, position = position_jitterdodge()) +
+    ylab("Manhattan Distance") +
+    theme_cowplot() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1))
+dev.off()
+
+filtered_normalized <- all_normalized_z2 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig"))
+
+pvals_boxplot <- data.frame(RBP = sort(unique(filtered_normalized$Gene.name)), pval = NA)
+for (i in 1:nrow(pvals_boxplot)){
+  current_rbp <- pvals_boxplot$RBP[i]
+  if (has_error(t.test(subset(all_normalized_z2, Gene.name == current_rbp & sig == "sig")$inner_dist, 
+                   subset(all_normalized_z2, Gene.name == current_rbp & sig == "not_sig")$inner_dist),
+      silent = TRUE)){
+    t_test$p.value <-1
+  } else{
+    t_test <- t.test(subset(all_normalized_z2, Gene.name == current_rbp & sig == "sig")$inner_dist, 
+                   subset(all_normalized_z2, Gene.name == current_rbp & sig == "not_sig")$inner_dist)
+  }
+  
+  pvals_boxplot$pval[i] <- t_test$p.value
+}
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_test_boxplot_manhattan_z3.png", height = 5, width = 20, units = "in", res = 300)
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    ggplot(aes(y=inner_dist, x=Gene.name, fill=sig)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("Manhattan Distance") +
+    theme_cowplot() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1))
+dev.off()
+
+#boxplot for scores
+
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    ggplot(aes(y=diff, x=Gene.name)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("delta PWM score") +
+    theme_cowplot() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1)) +
+  facet_grid()
+
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    filter(diff > 0) %>% 
+    ggplot(aes(y=diff, x=Gene.name)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("delta PWM score") +
+    theme_cowplot() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1)) +
+  facet_grid()
+
+
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    filter(diff < 0) %>% 
+    ggplot(aes(y=diff, x=Gene.name)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("delta PWM score") +
+    theme_cowplot() +
+    theme(axis.text.x = element_text(angle = 90, hjust=1)) +
+  facet_grid()
+
+```
+
+```{r show zscore cutoff}
+lines <- data.frame(type = c("mean","2std", "2std", "3std", "3std"), value = c(diff_mean, (diff_mean+2*diff_sd), (diff_mean-2*diff_sd), (diff_mean+3*diff_sd), (diff_mean-3*diff_sd)))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//pwm_output/SE_all_pwms_normalized_zscore_thresholds.png", width = 10, height = 6, units = "in", res = 300)
+all_normalized_z2 %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dense_rank((-diff))) %>% 
+ggplot(aes(y=diff, x=rank)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Rank based on Manhattan Distance") +
+  ylab("Normalized Delta PWM score") +
+  geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+dev.off()
+```
+
+```{r show zscore cutoff for z3}
+lines <- data.frame(type = c("mean","2std", "2std", "3std", "3std"), value = c(diff_mean, (diff_mean+2*diff_sd), (diff_mean-2*diff_sd), (diff_mean+3*diff_sd), (diff_mean-3*diff_sd)))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_all_pwms_normalized_zscore3_thresholds.png", width = 10, height = 6, units = "in", res = 300)
+all_normalized_z3 %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dplyr::dense_rank((-diff))) %>% 
+ggplot(aes(y=diff, x=rank)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Rank based on diff") +
+  ylab("Normalized Delta PWM score") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_pwmscore_vs_manhattan.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z3 %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dplyr::dense_rank((-inner_dist))) %>% 
+ggplot(aes(y=diff, x=rank)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Rank based on Manhattan Distance") +
+  ylab("Normalized Delta PWM score") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+dev.off()
+
+
+all_normalized_z3 %>% 
+  mutate(rank = dplyr::dense_rank((-inner_dist))) %>% 
+ggplot(aes(y=diff, x=rank)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Rank based on Manhattan Distance") +
+  ylab("Normalized Delta PWM score") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+
+all_normalized_z3 %>% 
+  mutate(rank = dplyr::dense_rank((-inner_dist))) %>% 
+ggplot(aes(y=zscore, x=rank)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Rank based on Manhattan Distance") +
+  ylab("Normalized Delta PWM score") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+
+all_normalized_z3 %>% 
+  group_by(current_motif) %>% 
+  mutate(rank = dplyr::dense_rank((-inner_dist))) %>% 
+ggplot(aes(y=zscore, x=rank)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Rank based on Manhattan Distance") +
+  ylab("Normalized Delta PWM score") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+
+all_normalized_z3 %>% 
+  group_by(current_motif) %>% 
+ggplot(aes(x=zscore, y=inner_dist)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  ylab("Manhattan Distance") +
+  xlab("zscore") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_ranked_zscore_vs_ranked_manhattan.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z3 %>%
+  group_by(current_motif) %>% 
+  mutate(rank_m = dplyr::dense_rank((-inner_dist))) %>% 
+  mutate(rank_z = dplyr::dense_rank((-abs(zscore)))) %>% 
+ggplot(aes(x=rank_z, y=rank_m)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  ylab("Manhattan Distance") +
+  xlab("zscore") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_zscore_vs_ranked_manhattan.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z3 %>%
+  group_by(current_motif) %>% 
+  mutate(rank_m = dplyr::dense_rank((-inner_dist))) %>% 
+ggplot(aes(y=zscore, x=rank_m)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Manhattan Distance") +
+  ylab("zscore") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_zscore_vs_manhattan.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z3 %>%
+ggplot(aes(y=zscore, x=inner_dist)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Manhattan Distance") +
+  ylab("zscore") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+dev.off()
+
+all_normalized_z3 %>% 
+  filter(sig == "sig") %>% 
+  ggplot(aes(y=zscore, x=inner_dist)) +
+  geom_point(aes(color=current_motif), show.legend = FALSE) +
+  #theme(legend.position = "None") +
+  xlab("Manhattan Distance") +
+  ylab("zscore") +
+  #geom_hline(data =lines, aes(linetype=type, yintercept = lines$value )) +
+  theme(legend.title = element_blank(), legend.position = c(0.85, 0.9))
+
+
+```
+
+```{r boxplot for zscore 3}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_all_rbps_sig_vs_not_sig_zscore3.png", height = 5, width = 20, units = "in", res = 300)
+all_normalized_z3 %>% 
+    ggplot(aes(y=inner_dist, x=Gene.name, fill=sig)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("Manhattan Distance") +
+    theme(axis.text.x = element_text(angle = 90, hjust=1))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_all_rbps_sig_vs_not_sig_zscore3_filtered.png", height = 5, width = 20, units = "in", res = 300)
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    ggplot(aes(y=inner_dist, x=Gene.name, fill=sig)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("Manhattan Distance") +
+    theme(axis.text.x = element_text(angle = 90, hjust=1))
+dev.off()
+
+# nonparametric test for difference between sig and not sig data
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_all_rbps_sig_vs_not_sig_zscore3_wilcox_sig_001.png", height = 5, width = 20, units = "in", res = 300)
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    mutate(results = wilcox.test(inner_dist ~ sig)$p.value) %>% 
+    filter(results <= 0.01) %>% 
+    ggplot(aes(y=inner_dist, x=Gene.name, fill=sig)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("Manhattan Distance") +
+    theme(axis.text.x = element_text(angle = 90, hjust=1))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_all_rbps_sig_vs_not_sig_zscore3_wilcox_sig_005.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z3 %>% 
+    group_by(current_motif) %>% 
+    filter(any(sig == "sig")) %>% 
+    mutate(results = wilcox.test(inner_dist ~ sig)$p.value) %>% 
+    filter(results <= 0.05) %>% 
+    ggplot(aes(y=inner_dist, x=Gene.name, fill=sig)) +
+    geom_boxplot(position=position_dodge(1)) + 
+    ylab("Manhattan Distance") +
+    theme(axis.text.x = element_text(angle = 90, hjust=1))
+dev.off()
+```
+
+```{r compare multiple PWMs for one protein}
+which_proteins <- unique(rnacmpt_ids[which(duplicated(rnacmpt_ids$Gene.name)),"Gene.name"])
+
+pdf("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//SE_all_pwms_per_protein.pdf")
+for (i in 1:length(which_proteins)){
+  current_pwms <- rnacmpt_ids[which(rnacmpt_ids$Gene.name == which_proteins[i]),]
+  
+  ks1 <- all_normalized_z2 %>% 
+    filter(sig == "sig") %>% 
+    filter(current_motif %in% current_pwms$current_motif)
+  
+  ks2 <- all_normalized_z2 %>% 
+    filter(sig == "not_sig") %>% 
+    filter(current_motif %in% current_pwms$current_motif)
+  
+  if (has_error(ks.test(ks1$inner_dist, ks2$inner_dist), silent = TRUE)){
+    ks_results$p.value <-1
+  } else{
+    ks_results <- (ks.test(ks1$inner_dist, ks2$inner_dist))
+  }
+  
+  p1 <- all_normalized_z2 %>% 
+    filter(current_motif %in% current_pwms$current_motif) %>% 
+    ggplot(aes(x=inner_dist, group = sig)) +
+    stat_ecdf(geom = "step", aes(color = sig), size = 1.3) +
+    theme(legend.title = element_blank(), legend.position = c(0.5,0.2)) +
+    ylab("Cumulative Fraction") +
+    annotate("text", label = paste("p-value = ",round(ks_results$p.value, digits =4)), x=Inf , y=0,
+             hjust=2, vjust=0) +
+    xlab("Manhattan Distance") +
+    ggtitle(which_proteins[i])
+  
+  print(p1)
+  
+}
+dev.off()
+```
+
+```{r venn diagrams}
+# make own for loop for venn diagram
+for (i in 1:length(which_proteins)){
+  current_pwms <- rnacmpt_ids[which(rnacmpt_ids$Gene.name == which_proteins[i]),]
+  
+  venn1 <- all_normalized_z2 %>% 
+    ungroup() %>% 
+    filter(sig == "sig") %>% 
+    filter(current_motif %in% current_pwms$current_motif) %>% 
+    select(current_snp, current_motif)
+  
+  if (nrow(venn1) > 0){
+    list1 <- list()
+    for (k in 1:length(names(table(venn1$current_motif)))){
+      current_name <- names(table(venn1$current_motif))[k]
+      list1[k] <- venn1[which(venn1$current_motif == current_name),"current_snp"]
+    }
+    names(list1) <- names(table(venn1$current_motif))
+  
+    venn.diagram(list1, filename = paste0("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//SE_all_pwms_for_",which_proteins[i],".png"), res = 300, imagetype = "png")
+  }
+}
+
+for (i in 1:length(which_proteins)){
+  current_pwms <- rnacmpt_ids[which(rnacmpt_ids$Gene.name == which_proteins[i]),]
+  
+  venn1 <- all_normalized_z2 %>% 
+    ungroup() %>% 
+    filter(current_motif %in% current_pwms$current_motif) %>% 
+    select(current_snp, current_motif)
+  
+  if (nrow(venn1) > 0){
+    list1 <- list()
+    for (k in 1:length(names(table(venn1$current_motif)))){
+      current_name <- names(table(venn1$current_motif))[k]
+      list1[k] <- venn1[which(venn1$current_motif == current_name),"current_snp"]
+    }
+    names(list1) <- names(table(venn1$current_motif))
+  
+    if (length(list1) > 5){
+      venn.diagram(list1[1:5], filename = paste0("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//SE_all_pwms_all_snvs_for_",which_proteins[i],".png"), res = 300, imagetype = "png")
+    } else{
+      venn.diagram(list1, filename = paste0("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//SE_all_pwms_all_snvs_for_",which_proteins[i],".png"), res = 300, imagetype = "png")
+    }
+    
+  }
+}
+
+
+```
+
+```{r sig events}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_events_which_rbps_morehuman.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z2 %>% 
+  filter(sig == "sig") %>% 
+  filter(diff > 0) %>% 
+  ungroup() %>% 
+  select(Gene.name, event_id) %>% 
+  unique() %>% 
+  dplyr::count(Gene.name) %>% 
+  arrange(desc(n)) %>% 
+  head(n=20) %>% 
+  ggplot(aes(x=Gene.name, y =n)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("RBP") +
+  ylab("Number of events with significant delta PWM > 0")
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_events_top_20_pwms_morehuman.png", height = 5, width = 5, units = "in", res = 300)
+count_rbps <- all_normalized_z2 %>% 
+  filter(sig == "sig") %>% 
+  filter(diff > 0) %>% 
+  ungroup() %>% 
+  select(c(current_motif, event_id)) %>% 
+  unique() %>% 
+  dplyr::count(current_motif) %>% 
+  arrange(desc(n)) %>% 
+  head(n=20) 
+  
+ggplot(count_rbps, aes(x=current_motif, y =n)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("RBP") +
+  ylab("Number of events with significant delta PWM > 0") + 
+  scale_x_discrete(breaks = subset(rnacmpt_ids, current_motif %in% count_rbps$current_motif)$current_motif, labels = subset(rnacmpt_ids, current_motif %in% count_rbps$current_motif)$Gene.name)
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_events_top_20_pwms_morechimp.png", height = 5, width = 5, units = "in", res = 300)
+count_rbp <- all_normalized_z2 %>% 
+  filter(sig == "sig") %>% 
+  filter(diff < 0) %>% 
+  select(c(current_motif, event_id)) %>% 
+  unique() %>% 
+  dplyr::count(current_motif) %>% 
+  arrange(desc(n)) %>% 
+  head(n=20)
+
+ggplot(count_rbp, aes(x=current_motif, y =n)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("RBP") +
+  ylab("Number of events with significant delta PWM < 0") +
+  scale_x_discrete(breaks = subset(rnacmpt_ids, current_motif %in% count_rbp$current_motif)$current_motif, labels = subset(rnacmpt_ids, current_motif %in% count_rbp$current_motif)$Gene.name)
+dev.off()
+
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_events_which_rbps_morechimp.png", height = 5, width = 5, units = "in", res = 300)
+all_normalized_z2 %>% 
+  filter(sig == "sig") %>% 
+  filter(diff < 0) %>% 
+  ungroup() %>% 
+  select(Gene.name, event_id) %>% 
+  unique() %>% 
+  dplyr::count(Gene.name) %>% 
+  arrange(desc(n)) %>% 
+  head(n=20) %>% 
+  ggplot(aes(x=Gene.name, y =n)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("RBP") +
+  ylab("Number of events with significant delta PWM > 0")
+dev.off()
+
+```
+
+```{r write sig data into table}
+#all_events <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/run12/all_species_count_psi_outfile.tsv") %>% 
+#  select(c(symbol, event_id)) %>% 
+#  na.omit() %>% 
+#  unique()
+
+all_events <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_chimp/human_genes_events.tsv") %>% 
+  na.omit() %>% 
+  unique()
+
+colnames(all_events) <- c("symbol","event_id")
+
+output_table <- all_normalized_z2 %>% 
+  ungroup() %>% 
+  filter(sig == "sig") %>% 
+  left_join(all_events, by = "event_id") %>% 
+  select(c(current_motif, event_id, symbol, inner_dist, diff, zscore, Gene.name, current_snp)) %>% 
+  unique() %>% 
+  ungroup()
+
+colnames(output_table) <- c("PWM","event_id","symbol","manhattan_distance","delta_PWM_score","zscore","RBP","variant")
+
+
+write.table(output_table, "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_table.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+
+
+output_table_sorted <- output_table %>% 
+  arrange(desc(zscore))
+
+write.table(output_table_sorted, "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_table_sorted_zscore.txt", col.names = T, row.names = F, quote = F, sep = "\t")
+
+write.table(unique(output_table_sorted$event_id), "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_event_ids.txt", col.names = F, row.names = F, quote = F, sep = "\t")
+
+output_no_names <- all_normalized_z2 %>% 
+  ungroup() %>% 
+  filter(sig == "sig") %>% 
+  left_join(all_events, by = "event_id") %>% 
+  #separate(current_snp, into = c("nothing", "something"), sep = "\\|") %>% 
+  #separate(something, into = c("numbers","iso2","snp"), sep = "\\_") %>% 
+  select(c(current_motif, event_id, inner_dist, diff, zscore, Gene.name, current_snp)) %>% 
+  unique() %>% 
+  arrange(desc(zscore), desc(inner_dist), current_snp)
+
+colnames(output_no_names) <- c("PWM","event_id","manhattan_distance","delta_PWM_score", "zscore", "RBP", "variant")
+
+write.table(output_no_names, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/pwm_output/SE_sig_table_sorted_zscore_no_genename.tsv", quote = F, row.names = F, col.names = T, sep = "\t")
+```
+
+This is still incomplete
+```{r collapse results from z3 for excel spread sheet}
+head(all_normalized_z2)
+head(all_normalized_z3)
+
+
+
+plot(density(all_normalized_z2$zscore))
+abline(v = -2)
+abline(v = 2)
+abline(v = -1)
+abline(v = -0.5)
+
+output_table <- all_normalized_z3 %>% 
+  ungroup() %>% 
+  filter(zscore >= 0.5 | zscore <= -0.5) %>% 
+  left_join(all_events, by = "event_id") %>% 
+  select(c(current_motif, event_id, symbol, inner_dist, diff, zscore, Gene.name, current_snp)) %>% 
+  unique() %>% 
+  ungroup()
+
+colnames(output_table) <- c("PWM","event_id","symbol","manhattan_distance","delta_PWM_score","zscore","RBP","variant")
+  
+
+human_gtf_plus <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_chimp/human_splice_lib_events.gtf", header = FALSE) %>% 
+  filter(str_detect(V9, "SE")) %>% 
+  filter(str_detect(V9, "included")) %>% 
+  separate(V9, into = c("gene","transcript"), sep = ";", extra = "drop") %>% 
+  separate(gene, into = c("nothing", "gene_id"), sep= " ") %>% 
+  separate(transcript, into = c("nothing","isoform_x","isoform_id"), sep = " ") %>% 
+  separate(isoform_id, into = c("nope","lol"), sep = "\\-") %>% 
+  separate(lol, into = c("more_lol","isoform"), sep = "\\_") %>% 
+  select(V1, V4, V5, V7, gene_id)
+
+human_gtf_plus_final <- human_gtf_plus[seq(2, nrow(human_gtf_plus), 3), ]
+
+human_gtf <- human_gtf_plus_final
+
+colnames(human_gtf) <- c("chr","start","end","strand","event_id")
+
+chimp_gtf_plus <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_chimp/chimputan_splice_lib_events.gtf", header = FALSE) %>% 
+  filter(str_detect(V9, "SE")) %>% 
+  filter(str_detect(V9, "included")) %>%
+  separate(V9, into = c("gene","transcript"), sep = ";", extra = "drop") %>% 
+  separate(gene, into = c("nothing", "gene_id"), sep= " ") %>% 
+  separate(transcript, into = c("nothing","isoform_x","isoform_id"), sep = " ") %>% 
+  separate(isoform_id, into = c("nope","lol"), sep = "\\-") %>% 
+  separate(lol, into = c("more_lol","isoform"), sep = "\\_") %>% 
+  select(V1, V4, V5, V7, gene_id)
+
+chimp_gtf_plus_final <- chimp_gtf_plus[seq(2, nrow(chimp_gtf_plus), 3), ]
+
+chimp_gtf <- chimp_gtf_plus_final
+colnames(chimp_gtf) <- c("chr","start","end","strand","event_id")
+
+testing <- output_table %>% 
+  ungroup() %>% 
+  group_by(event_id) %>% 
+  filter(any(zscore >= 2 | zscore <= -2 )) %>% 
+  filter(abs(zscore) == max(abs(zscore)) ) %>% 
+  unique() %>% 
+  ungroup() %>% 
+  #mutate(event_id2 = str_replace(event_id, "\\|","%7c")) %>% 
+  #mutate(variant2 = str_replace(variant, "\\|", "%7c")) %>% 
+  mutate(event_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/remap_2020/variant_calling/human_chimp/SE_candidates/",symbol,"_",event_id,"_sashimi_scatter.pdf")) %>% 
+  mutate(variant_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/remap_2020/variant_calling/human_chimp/SE_alignments/",variant,".pdf")) %>% 
+  left_join(human_gtf, by = c("event_id")) %>% 
+  left_join(chimp_gtf, by = c("event_id")) %>% 
+  mutate(coordinates_h = paste0(chr.x,":",start.x,"-",end.x)) %>% 
+  mutate(coordinates_c = paste0(chr.y,":",start.y,"-",end.y)) %>% 
+  select(event_id, manhattan_distance, delta_PWM_score, zscore, RBP, PWM, variant, coordinates_h, coordinates_c, event_link, variant_link) %>% 
+  unique() %>% 
+  arrange(desc(zscore), desc(manhattan_distance))
+
+colnames(testing) <- c("event_id","manhattan_distance","deltaPWM_score","z_score","RBP","PWM","variant","coordinates_human","coordinates_chimp")
+
+write.table(testing, file = "~/Desktop/remap_human_chimp_SE_AS_SNVs.tsv", col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+
+# any of the SNVs within an event that are 2 std away from mean
+# only list the max/min zscore achieved
+# don't add variant links to this, it will get too confusing
+testing_more <- output_table %>% 
+  ungroup() %>% 
+  group_by(event_id) %>% 
+  filter(any(zscore >= 2 | zscore <= -2 )) %>% 
+  filter(abs(zscore) == max(abs(zscore)) ) %>% 
+  select(-variant) %>% 
+  unique() %>% 
+  ungroup()
+
+#all_dpsi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/run12/all_condition_dpsi_df.tsv")
+
+all_dpsi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_chimp/all_dpsi.tsv")
+
+#all_psi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/run12/all_species_count_psi_outfile.tsv")
+
+all_psi <- read.delim("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/pipeline_output/human_chimp_chimp/all_species_junctioncounts.tsv")
+
+filtered_psi <- all_psi %>% 
+  filter(event_id %in% testing_more$event_id) %>% 
+  #filter(species == "human" | species == "chimputan") %>% 
+  filter(str_detect(sample_name, "hips") | str_detect(sample_name, "oips")) %>% 
+  filter(str_detect(sample_name, "cyto")) %>% 
+  #filter(condition == "0") %>% 
+  mutate(species = case_when(str_detect(sample_name, "hips") ~ "human",
+                             str_detect(sample_name, "oips") ~ "chimp")) %>% 
+  group_by(event_id, species) %>% 
+  mutate(mean_psi = mean(avg_psi)) %>% 
+  select(event_id, mean_psi, species) %>% 
+  group_by(event_id) %>% 
+  mutate(diff_mean_psi = mean_psi[3] - mean_psi[2]) %>% 
+  ungroup() %>% 
+  select(event_id, diff_mean_psi) %>% 
+  unique()
+
+testing_more_with_psi <- testing_more %>% 
+  left_join(filtered_psi, by = "event_id") %>% 
+  mutate(event_id2 = str_replace(event_id, "\\|","%7c")) %>% 
+  mutate(event_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/run12/variant_calling/SE_candidates/",symbol,"_",event_id2,"_sashimi_scatter.pdf")) %>% 
+  left_join(human_gtf, by = c("event_id")) %>% 
+  left_join(chimp_gtf, by = c("event_id")) %>% 
+  mutate(coordinates_h = paste0(chr.x,":",start.x,"-",end.x)) %>% 
+  mutate(coordinates_o = paste0(chr.y,":",start.y,"-",end.y)) %>% 
+  select(event_id, manhattan_distance, delta_PWM_score, zscore, diff_mean_psi, RBP, PWM, coordinates_h, coordinates_o, event_link) %>% 
+  unique() %>% 
+  arrange(desc(zscore), desc(manhattan_distance))
+
+write.table(testing_more_with_psi, file = "~/Desktop/remap_human_chimp_SE_AS_SNVs_filtered_z2.tsv", col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+
+
+
+testing_more_2 <- output_table %>% 
+  ungroup() %>% 
+  group_by(event_id) %>% 
+  filter(any(zscore >= 1 | zscore <= -1 )) %>% 
+  filter(abs(zscore) == max(abs(zscore)) ) %>% 
+  filter(!event_id %in% testing_more$event_id) %>% 
+  select(-variant) %>% 
+  unique() %>% 
+  ungroup()
+
+filtered_psi_2 <- all_psi %>% 
+  filter(event_id %in% testing_more_2$event_id) %>% 
+  filter(str_detect(sample_name, "hips") | str_detect(sample_name, "oips")) %>% 
+  filter(str_detect(sample_name, "cyto")) %>% 
+  #filter(condition == "0") %>% 
+  mutate(species = case_when(str_detect(sample_name, "hips") ~ "human",
+                             str_detect(sample_name, "oips") ~ "chimp")) %>% 
+  group_by(event_id, species) %>% 
+  mutate(mean_psi = mean(avg_psi)) %>% 
+  select(event_id, mean_psi, species) %>% 
+  group_by(event_id) %>% 
+  mutate(diff_mean_psi = mean_psi[3] - mean_psi[2]) %>% 
+  ungroup() %>% 
+  select(event_id, diff_mean_psi) %>% 
+  unique()
+
+testing_more_with_psi_2 <- testing_more_2 %>% 
+  left_join(filtered_psi_2, by = "event_id") %>% 
+  #mutate(event_id2 = str_replace(event_id, "\\|","%7c")) %>% 
+  mutate(event_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/run12/variant_calling/SE_candidates/",symbol,"_",event_id,"_sashimi_scatter.pdf")) %>% 
+  left_join(human_gtf, by = c("event_id")) %>% 
+  left_join(chimp_gtf, by = c("event_id")) %>% 
+  mutate(coordinates_h = paste0(chr.x,":",start.x,"-",end.x)) %>% 
+  mutate(coordinates_o = paste0(chr.y,":",start.y,"-",end.y)) %>% 
+  select(event_id, manhattan_distance, delta_PWM_score, zscore, diff_mean_psi, RBP, PWM, coordinates_h, coordinates_o, event_link) %>% 
+  unique() %>% 
+  arrange(desc(zscore), desc(manhattan_distance))
+
+write.table(testing_more_with_psi_2, file = "~/Desktop/remap_human_chimp_SE_AS_SNVs_filtered_z1.tsv", col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+
+
+testing_more_3 <- output_table %>% 
+  ungroup() %>% 
+  group_by(event_id) %>% 
+  filter(any(zscore >= 0.5 | zscore <= -0.5 )) %>% 
+  filter(abs(zscore) == max(abs(zscore)) ) %>% 
+  filter(!event_id %in% testing_more$event_id) %>% 
+  filter(!event_id %in% testing_more_2$event_id) %>% 
+  select(-variant) %>% 
+  unique() %>% 
+  ungroup()
+
+
+
+filtered_psi_3 <- all_psi %>% 
+  filter(event_id %in% testing_more_3$event_id) %>% 
+  filter(str_detect(sample_name, "hips") | str_detect(sample_name, "oips")) %>% 
+  filter(str_detect(sample_name, "cyto")) %>% 
+  #filter(condition == "0") %>% 
+  mutate(species = case_when(str_detect(sample_name, "hips") ~ "human",
+                             str_detect(sample_name, "oips") ~ "chimp")) %>% 
+  group_by(event_id, species) %>% 
+  mutate(mean_psi = mean(avg_psi)) %>% 
+  select(event_id, mean_psi, species) %>% 
+  group_by(event_id) %>% 
+  mutate(diff_mean_psi = mean_psi[3] - mean_psi[2]) %>% 
+  ungroup() %>% 
+  select(event_id, diff_mean_psi) %>% 
+  unique()
+
+testing_more_with_psi_3 <- testing_more_3 %>% 
+  left_join(filtered_psi_3, by = "event_id") %>% 
+  #mutate(event_id2 = str_replace(event_id, "\\|","%7c")) %>% 
+  mutate(event_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/run12/variant_calling/SE_candidates/",symbol,"_",event_id,"_sashimi_scatter.pdf")) %>% 
+  left_join(human_gtf, by = c("event_id")) %>% 
+  left_join(chimp_gtf, by = c("event_id")) %>% 
+  mutate(coordinates_h = paste0(chr.x,":",start.x,"-",end.x)) %>% 
+  mutate(coordinates_o = paste0(chr.y,":",start.y,"-",end.y)) %>% 
+  select(event_id, manhattan_distance, delta_PWM_score, zscore, diff_mean_psi, RBP, PWM, coordinates_h, coordinates_o, event_link) %>% 
+  unique() %>% 
+  arrange(desc(zscore), desc(manhattan_distance))
+
+write.table(testing_more_with_psi_3, file = "~/Desktop/remap_human_chimp_SE_AS_SNVs_filtered_z05.tsv", col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t")
+
+
+testing <- output_table %>% 
+  ungroup() %>% 
+  mutate(event_id2 = str_replace(event_id, "\\|","%7c")) %>% 
+  mutate(variant2 = str_replace(variant, "\\|", "%7c")) %>% 
+  mutate(event_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/run12/variant_calling/SE_candidates/",symbol,"_",event_id2,"_sashimi_scatter.pdf")) %>% 
+  mutate(variant_link = paste0("http://public.gi.ucsc.edu/~juphilip/human_chimp_chimp/run12/variant_calling/SE_alignments/",variant2,".pdf")) %>% 
+  left_join(human_gtf, by = c("event_id")) %>% 
+  left_join(chimp_gtf, by = c("event_id")) %>% 
+  mutate(coordinates_h = paste0(chr.x,":",start.x,"-",end.x)) %>% 
+  mutate(coordinates_c = paste0(chr.y,":",start.y,"-",end.y)) %>% 
+  select(event_id, manhattan_distance, delta_PWM_score, zscore, RBP, PWM, variant, coordinates_h, coordinates_c, event_link, variant_link) %>% 
+  unique() %>% 
+  arrange(desc(zscore), desc(manhattan_distance))
+
+# all needed event ids for sashimi replotting
+all_events_new <- rbind(testing_more_with_psi, testing_more_with_psi_2, testing_more_with_psi_3)
+
+write.table(all_events_new, file = "~/Desktop/remap_human_chimp_SE_AS_snv_events_new.tsv", col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+
+
+## INSERTIONS
+```{r pwm loop for insertions}
+#insertion(x): An CompressedIRangesList object containing the locations of the insertions
+#from the perspective of the pattern.
+# from bioconductor documentation
+
+# which means insertion -> extra seq in human
+# deletion means missing sequence in in human
+# which is opposite of how we would normally describe it
+
+
+# make output object
+pwm_insertion_h <- list()
+pwm_insertion_o <- list()
+long_insertions <- list()
+
+# loop
+for (i in 1:length(SE_in_list_new_new)){
+  current_event <- names(SE_in_list_new_new)[i]
+  # if any mismatches are reported, loop through them
+  tmp_output_h <- list()
+  tmp_output_c <- list()
+  if (!is.null(nrow(SE_in_list_new_new[[i]]))){
+    for (k in 1:nrow(SE_in_list_new_new[[i]])){
+      # position mismatch for human
+      tmp_tmp_output_h <- list()
+      tmp_tmp_output_c <- list()
+      if ( SE_in_list_new_new[[i]]$width[k] > 1 ){
+        # put those in a different list for later
+        long_insertions[[length(long_insertions)+1]] <- SE_in_list_new_new[[i]][k,]
+      } else{
+        # here's what to do with the 1nt insertions
+        # for human the approach stays the same
+        pos_insertion_h <- SE_in_list_new_new[[i]]$start[k]
+        # for chimp, position equivalent is one earlier
+        #pos_insertion_o <- SE_in_list_new_new[[i]]$start[k] - 1
+        current_snp <- paste0(names(SE_in_list_new_new)[i],"_",k)
+        
+        for (j in 1:length(pwms_list)){
+        current_motif <- names(pwms_list)[j]
+        current_pwm <- pwms_list[[j]]
+        string_start_h <- pos_insertion_h - ncol(pwms_list[[j]])
+        string_end_h <- pos_insertion_h + ncol(pwms_list[[j]])
+        if (string_start_h < 1){
+          string_start_h <- 1
+        }
+        
+        if (string_end_h > length(human_strings_ordered[[i]])){
+          string_end_h <- length(human_strings_ordered[[i]])
+        }
+        
+        # chimp string has to start one position earlier because of deletion
+        # and end at the same position despite deletion
+        string_start_c <- string_start_h - 1
+        string_end_c <- string_end_h
+        
+        if(string_start_c < 1){
+          string_start_c <- 1
+        }
+        
+        if (string_end_c > length(chimp_strings_ordered[[i]])){
+          string_end_c <- length(chimp_strings_ordered[[i]])
+        }
+        
+        # pwm match
+        query_string_h <- human_strings_ordered[[i]][string_start_h:string_end_h]
+        query_string_c <- chimp_strings_ordered[[i]][string_start_c:string_end_c]
+        
+        tmp_h <- matchPWM(current_pwm, query_string_h, min.score = "80%", 
+                          with.score = T)
+        tmp_c <- matchPWM(current_pwm, query_string_c, min.score = "80%",
+                          with.score = T)
+        
+        if(nrow(mcols(tmp_h)) > 0){
+          tmp_tmp_output_h[[j]] <- data.frame(tmp_h, mcols(tmp_h), current_motif, current_snp)
+          save_example_human <- tmp_h
+        }
+        if(nrow(mcols(tmp_c)) > 0){
+          tmp_tmp_output_c[[j]] <- data.frame(tmp_c, mcols(tmp_c), current_motif, current_snp)
+        }
+      }
+        tmp_output_h[[k]] <- do.call(rbind, tmp_tmp_output_h)
+        tmp_output_c[[k]] <- do.call(rbind, tmp_tmp_output_c)
+      }
+    }
+  }
+  pwm_insertion_h[[i]] <- tmp_output_h
+  pwm_insertion_o[[i]] <- tmp_output_c
+}
+
+names(pwm_insertion_h) <- names(human_strings_ordered)
+names(pwm_insertion_o) <- names(chimp_strings_ordered)
+
+save(pwm_insertion_h, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_new_human_insertion_pwms_out.RData")
+save(pwm_insertion_o, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_new_chimp_insertion_pwms_out.RData")
+
+```
+
+```{r collapse output for insertions}
+new_in_output_h <- list()
+new_in_output_o <- list()
+for (i in 1:length(pwm_insertion_h)){
+  if (!is.null(do.call(rbind, pwm_insertion_h[[i]]))){
+    new_in_output_h[[i]] <- do.call(rbind, pwm_insertion_h[[i]])
+    current_name <- strsplit(as.character(new_in_output_h[[i]]$current_snp[1]), split = "\\_[0-9]+")
+    names(new_in_output_h)[i] <- current_name
+  }
+  if (!is.null(do.call(rbind, pwm_insertion_o[[i]]))){
+    new_in_output_o[[i]] <- do.call(rbind, pwm_insertion_o[[i]]) 
+    current_name <- strsplit(as.character(new_in_output_o[[i]]$current_snp[1]), split = "\\_[0-9]+")
+    names(new_in_output_o)[i] <- current_name
+  }
+}
+
+
+colnames(rnacmpt_ids)[2] <- "current_motif"
+
+new_new_in_output_h <- mapply(`[<-`, new_in_output_h, 'event_id', value = names(new_in_output_h), SIMPLIFY = FALSE)
+
+new_new_in_output_o <- mapply(`[<-`, new_in_output_o, 'event_id', value = names(new_in_output_o), SIMPLIFY = FALSE)
+
+collapsed_insertions_h <- do.call(rbind, new_new_in_output_h) %>% 
+  na.omit() %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  filter(Species == "Homo_sapiens") %>% 
+  mutate(source = "human")
+
+colnames(collapsed_insertions_h)[1] <- "tmp"
+
+collapsed_insertions_c <- do.call(rbind, new_new_in_output_o) %>% 
+  na.omit() %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  filter(Species == "Homo_sapiens") %>% 
+  mutate(source = "chimp")
+
+colnames(collapsed_insertions_c) <- colnames(collapsed_insertions_h)
+
+collapsed_insertions_total <- rbind(collapsed_insertions_h, collapsed_insertions_c) %>% 
+  mutate(score = as.numeric(score))
+```
+
+```{r first insertion plots}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_insertions_not_very_meaningful_overview.png", height = 5, width = 14, units = "in", res = 300)
+ggplot(collapsed_insertions_total, aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme_cowplot()
+dev.off()
+
+
+collapsed_insertions_total_score <- collapsed_insertions_total %>%
+  left_join(categorized_all_SE, by = "event_id")
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_insertions_RBP_overview_by_dist_top100.png", height = 5, width = 20, units = "in", res = 300)
+ggplot(collapsed_insertions_total_score, aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_grid(cols = vars(cat)) + 
+  theme_cowplot()
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_insertions_RBP_overview_manhattan_dist_top100.png", height = 5, width = 15, units = "in", res = 300)
+ggplot(subset(collapsed_insertions_total_score, cat == "top" | cat == "bottom"), aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_grid(cols = vars(cat)) + 
+  theme_cowplot()
+dev.off()
+```
+there would be more analysis available
+but i think last time we stopped because of positional problems
+
+## DELETIONS
+```{r pwm loop for deletions}
+#insertion(x): An CompressedIRangesList object containing the locations of the insertions
+#from the perspective of the pattern.
+# from bioconductor documentation
+
+# which means insertion -> extra seq in human
+# deletion means missing sequence in in human
+# which is opposite of how we would normally describe it
+
+
+# make output object
+pwm_deletion_h <- list()
+pwm_deletion_o <- list()
+long_deletions <- list()
+special_cases <- list()
+
+# special cases is a little dumb but some events have a big indel and a small indel and
+# its hard to find the small indel reliably then because of the big difference in sequence length
+# between human and chimp
+# therefore I have eliminated these for now
+
+# loop
+for (i in 1:length(SE_del_list_new_new)){
+  current_event <- names(SE_del_list_new_new)[i]
+  # if any mismatches are reported, loop through them
+  tmp_output_h <- list()
+  tmp_output_c <- list()
+  if (!is.null(nrow(SE_del_list_new_new[[i]]))){
+    for (k in 1:nrow(SE_del_list_new_new[[i]])){
+      # position mismatch for human
+      tmp_tmp_output_h <- list()
+      tmp_tmp_output_c <- list()
+      if ( SE_del_list_new_new[[i]]$width[k] > 1 ){
+        # put those in a different list for later
+        long_deletions[[length(long_deletions)+1]] <- SE_del_list_new_new[[i]][k,]
+      } else if(width(human_strings_ordered[i]) > width(chimp_strings_ordered[i])+30){
+        special_cases[[length(special_cases)+1]] <- SE_del_list_new_new[[i]][k,]
+      } else{
+        # here's what to do with the 1nt deletions
+        # for human the approach stays the same
+        pos_deletion_o <- SE_del_list_new_new[[i]]$start[k]
+        # for chimp, position equivalent is one earlier
+        #pos_deletion_o <- SE_in_list_new_new[[i]]$start[k] - 1
+        current_snp <- paste0(names(SE_del_list_new_new)[i],"_",k)
+        
+        for (j in 1:length(pwms_list)){
+        current_motif <- names(pwms_list)[j]
+        current_pwm <- pwms_list[[j]]
+        string_start_c <- pos_deletion_o - ncol(pwms_list[[j]])
+        string_end_c <- pos_deletion_o + ncol(pwms_list[[j]])
+        if (string_start_c < 1){
+          string_start_c <- 1
+        }
+        
+        if (string_end_c > length(chimp_strings_ordered[[i]])){
+          string_end_c <- length(chimp_strings_ordered[[i]])
+        }
+        
+        # chimp string has to start one position earlier because of deletion
+        # and end at the same position despite deletion
+        string_start_h <- string_start_c - 1
+        string_end_h <- string_end_c
+        
+        if(string_start_h < 1){
+          string_start_h <- 1
+        }
+        
+        if (string_end_h > length(human_strings_ordered[[i]])){
+          string_end_h <- length(human_strings_ordered[[i]])
+        }
+        
+        # pwm match
+        query_string_h <- human_strings_ordered[[i]][string_start_h:string_end_h]
+        query_string_c <- chimp_strings_ordered[[i]][string_start_c:string_end_c]
+        
+        tmp_h <- matchPWM(current_pwm, query_string_h, min.score = "80%", 
+                          with.score = T)
+        tmp_c <- matchPWM(current_pwm, query_string_c, min.score = "80%",
+                          with.score = T)
+        
+        if(nrow(mcols(tmp_h)) > 0){
+          tmp_tmp_output_h[[j]] <- data.frame(tmp_h, mcols(tmp_h), current_motif, current_snp)
+          save_example_human <- tmp_h
+        }
+        if(nrow(mcols(tmp_c)) > 0){
+          tmp_tmp_output_c[[j]] <- data.frame(tmp_c, mcols(tmp_c), current_motif, current_snp)
+        }
+      }
+        tmp_output_h[[k]] <- do.call(rbind, tmp_tmp_output_h)
+        tmp_output_c[[k]] <- do.call(rbind, tmp_tmp_output_c)
+      }
+    }
+  }
+  pwm_deletion_h[[i]] <- tmp_output_h
+  pwm_deletion_o[[i]] <- tmp_output_c
+}
+
+names(pwm_deletion_h) <- names(human_strings_ordered)
+names(pwm_deletion_o) <- names(chimp_strings_ordered)
+
+save(pwm_deletion_h, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_new_human_deletion_pwms_out.RData")
+save(pwm_deletion_o, file = "~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE//SE_new_chimp_deletion_pwms_out.RData")
+
+```
+
+```{r collapse output}
+new_del_output_h <- list()
+new_del_output_c <- list()
+for (i in 1:length(pwm_deletion_h)){
+  if (!is.null(do.call(rbind, pwm_deletion_h[[i]]))){
+    new_del_output_h[[i]] <- do.call(rbind, pwm_deletion_h[[i]])
+    current_name <- strsplit(as.character(new_del_output_h[[i]]$current_snp[1]), split = "\\_[0-9]+")
+    names(new_del_output_h)[i] <- current_name
+  }
+  if (!is.null(do.call(rbind, pwm_deletion_o[[i]]))){
+    new_del_output_c[[i]] <- do.call(rbind, pwm_deletion_o[[i]]) 
+    current_name <- strsplit(as.character(new_del_output_c[[i]]$current_snp[1]), split = "\\_[0-9]+")
+    names(new_del_output_c)[i] <- current_name
+  }
+}
+
+
+colnames(rnacmpt_ids)[2] <- "current_motif"
+
+new_new_del_output_h <- mapply(`[<-`, new_del_output_h, 'event_id', value = names(new_del_output_h), SIMPLIFY = FALSE)
+
+new_new_del_output_c <- mapply(`[<-`, new_del_output_c, 'event_id', value = names(new_del_output_c), SIMPLIFY = FALSE)
+
+collapsed_deletions_h <- do.call(rbind, new_new_del_output_h) %>% 
+  na.omit() %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  filter(Species == "Homo_sapiens") %>% 
+  mutate(source = "human")
+
+colnames(collapsed_deletions_h)[1] <- "tmp"
+
+collapsed_deletions_c <- do.call(rbind, new_new_del_output_c) %>% 
+  na.omit() %>% 
+  left_join(rnacmpt_ids, by = "current_motif") %>% 
+  filter(Species == "Homo_sapiens") %>% 
+  mutate(source = "chimp")
+
+colnames(collapsed_deletions_c) <- colnames(collapsed_deletions_h)
+
+collapsed_deletions_total <- rbind(collapsed_deletions_h, collapsed_deletions_c) %>% 
+  mutate(score = as.numeric(score))
+```
+
+```{r first deletion plots}
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_deletions_not_very_meaningful_overview.png", height = 5, width = 14, units = "in", res = 300)
+ggplot(collapsed_deletions_total, aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme_cowplot()
+dev.off()
+
+
+collapsed_deletions_total_score <- collapsed_deletions_total %>%
+  left_join(categorized_all_SE, by = "event_id")
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_deletions_RBP_overview_by_dist_top100.png", height = 5, width = 20, units = "in", res = 300)
+ggplot(collapsed_deletions_total_score, aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_grid(cols = vars(cat))
+dev.off()
+
+png("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/SE_deletions_RBP_overview_manhattan_dist_top100.png", height = 5, width = 15, units = "in", res = 300)
+ggplot(subset(collapsed_deletions_total_score, cat == "top" | cat == "bottom"), aes(x=Gene.name, fill = source)) +
+  stat_count(aes(group = source), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  facet_grid(cols = vars(cat))
+dev.off()
+```
+
+
+```{r save data}
+save.image("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_SE/human_chimp_SE_variant_calling_data_SNP_level.RData")
+
+
+```
