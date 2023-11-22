@@ -25,7 +25,12 @@ theme_set(theme_cowplot())
 library(scales)
 
 
+# load RBP funs
+source("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/Draper_Philipp_et_al/RBP_filter_funs.R")
 
+# load RNAcompete IDs
+rnacmpt_ids <- read.delim("~/Documents/02_data/RNAcompete/rna_compete_ids.csv", sep = ",", stringsAsFactors = F, header = T) %>%
+  filter(Species == "Homo_sapiens")
 ```
 
 # Alternative first events
@@ -81,168 +86,97 @@ load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_eleme
 ```{r human chimp AF NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 # events that are ASTC in human and AS in chimp
 # NAs replaced with zero
-data_a_hc_AF <- collapsed_output_total_score_human_chimp_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & chimp_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0),
-         species = "human_chimp",
-         event_type = "AF") 
+data_a_hc_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="AF")
+
+data_a_hc_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="AF")
+ 
 
 
+# AS in human, ASTC in chimp
+data_b_hc_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                        species1_AS=human_AS, species1_event_type = "AS",
+                        species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                        filter=FALSE, event_type="AF")
 
-data_a_hc_AF_filtered <- collapsed_output_total_score_human_chimp_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & chimp_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff > 2 | diff < -2)
-
-data_b_hc_AF <- collapsed_output_total_score_human_chimp_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0),
-         species = "human_chimp",
-         event_type = "AF")
-
-data_b_hc_AF_filtered <- collapsed_output_total_score_human_chimp_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff > 2 | diff < -2)
+data_b_hc_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                        species1_AS=human_AS, species1_event_type = "AS",
+                        species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                        filter=TRUE, event_type="AF")
 
 
 ```
 
 ```{r human chimp AF ASTC NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 # events that are ASTC in both
-data_c_hc_AF<- collapsed_output_total_score_human_chimp_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "AF")
+data_c_hc_AF<- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                        species1_AS=human_AS, species1_event_type = "ASTC",
+                        species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                        filter=FALSE, event_type="AF")
 
-data_c_hc_AF_filtered <- collapsed_output_total_score_human_chimp_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0)) %>% 
-  mutate(diff = human - chimp) %>% 
-  filter(diff > 2 | diff < -2)
-
-
+data_c_hc_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                        species1_AS=human_AS, species1_event_type = "ASTC",
+                        species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                        filter=TRUE, event_type="AF")
 
 ```
 
 ```{r human chimp ASTC cons spec}
 # events that are ASTC in both species (human and chimp) and have conserved sedimentation profiles
-data_cons_hc_AF<- collapsed_output_total_score_human_chimp_AF %>% 
-  filter(event_id %in% astc_hc_AF_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "AF",
-         cat = "conserved")
+data_cons_hc_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", conservation_df=astc_hc_AF_bottom,
+                        conservation_status = "conserved",
+                        filter=FALSE, event_type="AF")
 
-# events that are ASTC in both species (human and chimp) and have conserved sedimentation profiles & filtered for difference between human and chimp in score
-data_cons_hc_AF_filtered <- collapsed_output_total_score_human_chimp_AF %>% 
-  filter(event_id %in% astc_hc_AF_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "AF",
-         cat = "conserved") %>% 
-  mutate(diff = human - chimp) %>% 
-  filter(diff > 2 | diff < -2)
+data_cons_hc_AF_filtered <- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", conservation_df=astc_hc_AF_bottom,
+                        conservation_status = "conserved",
+                        filter=TRUE, event_type="AF")
 
 # events that are ASTC in both species (human and chimp) and have species-specific sedimentation profiles
-data_spec_hc_AF<- collapsed_output_total_score_human_chimp_AF %>% 
-  filter(event_id %in% astc_hc_AF_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "AF",
-         cat = "species-specific")
+data_spec_hc_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", conservation_df=astc_hc_AF_top,
+                        conservation_status = "species-specific",
+                        filter=FALSE, event_type="AF")
 
-data_spec_hc_AF_filtered<- collapsed_output_total_score_human_chimp_AF %>% 
-  filter(event_id %in% astc_hc_AF_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "AF",
-         cat = "species-specific") %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff > 2 | diff < -2)
+data_spec_hc_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_AF,
+                        species1="human",species2="chimp", conservation_df=astc_hc_AF_top,
+                        conservation_status = "species-specific",
+                        filter=TRUE, event_type="AF")
+
+
 
 ```
 
+```{r human chimp AF SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+data_d_hc_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF_SNV_bg,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="AF")
 
+data_d_hc_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_AF_SNV_bg,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="AF")
+
+```
+
+```{r summary table}
+rbp_table_long_hc_AF <- summary_table(rnacmpt_ids, data_a_hc_AF_filtered, data_b_hc_AF_filtered, data_c_hc_AF_filtered, data_d_hc_AF_filtered, data_cons_hc_AF_filtered, data_spec_hc_AF_filtered, "human","chimp")
+```
 
 
 # human orang AF
@@ -267,218 +201,92 @@ collapsed_new_mismatches_human_orang_AF_SNV_bg <- collapsed_new_mismatches
 ## sort data
 ```{r human orang AF NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
-data_a_ho_AF <- collapsed_output_total_score_human_orang_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "AF")
+data_a_ho_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="AF")
 
-data_a_ho_AF_filtered <- collapsed_output_total_score_human_orang_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_a_ho_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="AF")
 
-data_b_ho_AF <- collapsed_output_total_score_human_orang_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(human = replace_na(human, 0),
-         orang = replace_na(orang, 0),
-         species = "human_orang",
-         event_type = "AF")
+data_b_ho_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=FALSE, event_type="AF")
 
-data_b_ho_AF_filtered <- collapsed_output_total_score_human_orang_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(human = replace_na(human, 0),
-         orang = replace_na(orang, 0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_b_ho_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=TRUE, event_type="AF")
 
-
-  
 
 
 ```
 
 ```{r human orang ASTC AF NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
-data_c_ho_AF <- collapsed_output_total_score_human_orang_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "AF")
+data_c_ho_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=FALSE, event_type="AF")
 
-data_c_ho_AF_filtered <- collapsed_output_total_score_human_orang_AF %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_c_ho_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=TRUE, event_type="AF")
 
 ```
 
 ```{r human orang ASTC cons vs spec, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_cons_ho_AF<- collapsed_output_total_score_human_orang_AF %>% 
-  filter(event_id %in% astc_ho_AF_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "AF",
-         cat = "conserved")
+data_cons_ho_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_AF,
+                        species1="human",species2="orang", conservation_df=astc_ho_AF_bottom,
+                        conservation_status = "conserved",
+                        filter=FALSE, event_type="AF")
 
-data_cons_ho_AF_filtered <- collapsed_output_total_score_human_orang_AF %>% 
-  filter(event_id %in% astc_ho_AF_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "AF",
-         cat = "conserved") %>% 
-  mutate(diff = human - orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_cons_ho_AF_filtered<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_AF,
+                        species1="human",species2="orang", conservation_df=astc_ho_AF_bottom,
+                        conservation_status = "conserved",
+                        filter=TRUE, event_type="AF")
 
-data_spec_ho_AF<- collapsed_output_total_score_human_orang_AF %>% 
-  filter(event_id %in% astc_ho_AF_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "AF",
-         cat = "species-specific")
 
-data_spec_ho_AF_filtered<- collapsed_output_total_score_human_orang_AF %>% 
-  filter(event_id %in% astc_ho_AF_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "AF",
-         cat = "species-specific") %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
 
-heatmap_cons <- ggplot(data = data_cons_ho_AF) +
-  geom_point_interactive(aes(x=human, y=orang, color=current_motif, 
-                             shape=cat))+
-  theme(legend.position = "none") +
-  geom_abline(intercept = 0, slope = 1) +
-  ylab("human ASTC ") +
-  xlab("orang ASTC") +
-  #ylim(c(0,15)) +
-  #xlim(c(0,15)) + 
-  ggtitle("AF events human and orang")
+data_spec_ho_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_AF,
+                        species1="human",species2="orang", conservation_df=astc_ho_AF_top,
+                        conservation_status = "species-specific",
+                        filter=FALSE, event_type="AF")
 
-heatmap_spec <- ggplot(data = data_spec_ho_AF) +
-  geom_point_interactive(aes(x=human, y=orang, color=current_motif, 
-                             shape=cat))+
-  theme(legend.position = "none") +
-  geom_abline(intercept = 0, slope = 1) +
-  ylab("human ASTC ") +
-  xlab("orang ASTC") +
-  #ylim(c(0,15)) +
-  #xlim(c(0,15)) + 
-  ggtitle("AF events human and orang")
+data_spec_ho_AF<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_AF,
+                        species1="human",species2="orang", conservation_df=astc_ho_AF_top,
+                        conservation_status = "species-specific",
+                        filter=TRUE, event_type="AF")
+ 
 ```
 
 ```{r human orang AF SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_d_ho_AF <- collapsed_output_total_score_human_orang_AF_SNV_bg %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  dplyr::summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human, 0),
-         species = "human_orang",
-         event_type = "AF")
+data_d_ho_AF <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF_SNV_bg,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="AF")
 
-data_d_ho_AF_filtered <- collapsed_output_total_score_human_orang_AF_SNV_bg %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  dplyr::summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_d_ho_AF_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_AF_SNV_bg,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="AF")
 
-  
+```
+
+```{r summary table}
+rbp_table_long_ho_AF <- summary_table(rnacmpt_ids, data_a_ho_AF_filtered, data_b_ho_AF_filtered, data_c_ho_AF_filtered, data_d_ho_AF_filtered, data_cons_ho_AF_filtered, data_spec_ho_AF_filtered, "human","orang")
 ```
 
 
@@ -529,195 +337,92 @@ collapsed_new_mismatches_human_chimp_SE_SNV_bg <- collapsed_new_mismatches
 ## sort data
 
 ```{r human chimp SE NA replace,  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_a_hc_SE <- collapsed_output_total_score_human_chimp_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & chimp_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0),
-         species = "human_chimp",
-         event_type = "SE")
+data_a_hc_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="SE")
 
-data_a_hc_SE_filtered <- collapsed_output_total_score_human_chimp_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & chimp_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff > 2 | diff < -2)
-  
+data_a_hc_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="SE")
 
 
-data_b_hc_SE <- collapsed_output_total_score_human_chimp_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0),
-         species = "human_chimp",
-         event_type = "SE")
+data_b_hc_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                           filter=FALSE, event_type="SE")
 
-data_b_hc_SE_filtered <- collapsed_output_total_score_human_chimp_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff > 2 | diff < -2)
-  
+data_b_hc_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                           filter=TRUE, event_type="SE")
+
+
 ```
 
 ```{r human chimp ASTC SE NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
-data_c_hc_SE <- collapsed_output_total_score_human_chimp_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "SE")
+data_c_hc_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                           filter=FALSE, event_type="SE")
 
-data_c_hc_SE_filtered <- collapsed_output_total_score_human_chimp_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & chimp_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0)) %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff >2 | diff < -2)
+data_c_hc_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "ASTC",
+                           filter=TRUE, event_type="SE")
+
 ```
 
 ```{r human chimp ASTC SE cons spec, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_cons_hc_SE<- collapsed_output_total_score_human_chimp_SE %>% 
-  filter(event_id %in% astc_hc_SE_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "SE",
-         cat = "conserved")
+data_cons_hc_SE<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_SE,
+                        species1="human",species2="chimp", conservation_df=astc_hc_SE_bottom,
+                        conservation_status = "conserved",
+                        filter=FALSE, event_type="SE")
 
-data_cons_hc_SE_filtered <- collapsed_output_total_score_human_chimp_SE %>% 
-  filter(event_id %in% astc_hc_SE_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "SE",
-         cat = "conserved") %>% 
-  mutate(diff = human - chimp) %>% 
-  filter(diff > 2 | diff < -2)
+data_cons_hc_SE_filtered<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_SE,
+                        species1="human",species2="chimp", conservation_df=astc_hc_SE_bottom,
+                        conservation_status = "conserved",
+                        filter=TRUE, event_type="SE")
 
-data_spec_hc_SE<- collapsed_output_total_score_human_chimp_SE %>% 
-  filter(event_id %in% astc_hc_SE_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "SE",
-         cat = "species-specific")
 
-data_spec_hc_SE_filtered<- collapsed_output_total_score_human_chimp_SE %>% 
-  filter(event_id %in% astc_hc_SE_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp,0),
-         human = replace_na(human,0),
-         species = "human_chimp",
-         event_type = "SE",
-         cat = "species-specific") %>% 
-  mutate(diff = human-chimp) %>% 
-  filter(diff > 2 | diff < -2)
+
+data_spec_hc_SE<- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_SE,
+                        species1="human",species2="chimp", conservation_df=astc_hc_SE_top,
+                        conservation_status = "species-specific",
+                        filter=FALSE, event_type="SE")
+
+data_spec_hc_SE_filtered <- RBP_by_conservation(df=collapsed_output_total_score_human_chimp_SE,
+                        species1="human",species2="chimp", conservation_df=astc_hc_SE_top,
+                        conservation_status = "species-specific",
+                        filter=TRUE, event_type="SE")
 
 ```
 
 ```{r human chimp SE SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_d_hc_SE <- collapsed_output_total_score_human_chimp_SE_SNV_bg %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  dplyr::summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & chimp_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0),
-         species = "human_chimp",
-         event_type = "SE")
+data_d_hc_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE_SNV_bg,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="SE")
 
+data_d_hc_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_chimp_SE_SNV_bg,
+                           species1="human",species2="chimp", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=chimp_ASTC,species2_AS=chimp_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="SE")
 
-data_d_hc_SE_filtered <- collapsed_output_total_score_human_chimp_SE_SNV_bg %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         chimp_ET = case_when(event_id %in% chimp_ASTC$V1 ~ "ASTC",
-                              event_id %in% chimp_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, chimp_ET) %>% 
-  dplyr::summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & chimp_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(chimp = replace_na(chimp, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = chimp-human) %>% 
-  filter(diff > 2 | diff < -2)
+```
 
-
+```{r summary table}
+rbp_table_long_hc_SE <- summary_table(rnacmpt_ids, data_a_hc_SE_filtered, data_b_hc_SE_filtered, data_c_hc_SE_filtered, data_d_hc_SE_filtered, data_cons_hc_SE_filtered, data_spec_hc_SE_filtered, "human","chimp")
 ```
 
 
@@ -745,197 +450,93 @@ collapsed_new_mismatches_human_orang_SE_SNV_bg <- collapsed_new_mismatches
 ## sort data
 ```{r human orang SE NA replace , echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
-data_a_ho_SE <- collapsed_output_total_score_human_orang_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, source, Gene.name, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "SE")
+data_a_ho_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="SE")
 
-data_a_ho_SE_filtered <- collapsed_output_total_score_human_orang_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, source, Gene.name, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "ASTC" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human,0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_a_ho_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="SE")
 
-data_b_ho_SE <- collapsed_output_total_score_human_orang_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither" ),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name,source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "SE")
 
-data_b_ho_SE_filtered <- collapsed_output_total_score_human_orang_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither" ),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name,source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2 )
+data_b_ho_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=FALSE, event_type="SE")
+
+data_b_ho_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=TRUE, event_type="SE")
 
 ```
 
 ```{r human orang ASTC SE NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
-data_c_ho_SE <- collapsed_output_total_score_human_orang_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human, 0),
-         species = "human_orang",
-         event_type = "SE")
+data_c_ho_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=FALSE, event_type="SE")
 
-data_c_ho_SE_filtered <- collapsed_output_total_score_human_orang_SE %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  summarize(total_score = sum(score))%>% 
-  filter(human_ET == "ASTC" & orang_ET == "ASTC") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
-
+data_c_ho_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "ASTC",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "ASTC",
+                           filter=TRUE, event_type="SE")
 
 ```
 
 ```{r human orang ASTC SE cons vs spec, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-data_cons_ho_SE<- collapsed_output_total_score_human_orang_SE %>% 
-  filter(event_id %in% astc_ho_SE_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "SE",
-         cat = "conserved")
+data_cons_ho_SE<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_SE,
+                        species1="human",species2="orang", conservation_df=astc_ho_SE_bottom,
+                        conservation_status = "conserved",
+                        filter=FALSE, event_type="SE")
 
-data_cons_ho_SE_filtered <- collapsed_output_total_score_human_orang_SE %>% 
-  filter(event_id %in% astc_ho_SE_bottom$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "SE",
-         cat = "conserved") %>% 
-  mutate(diff = human - orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_cons_ho_SE_filtered <- RBP_by_conservation(df=collapsed_output_total_score_human_orang_SE,
+                        species1="human",species2="orang", conservation_df=astc_ho_SE_bottom,
+                        conservation_status = "conserved",
+                        filter=TRUE, event_type="SE")
 
-data_spec_ho_SE<- collapsed_output_total_score_human_orang_SE %>% 
-  filter(event_id %in% astc_ho_SE_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "SE",
-         cat = "species-specific")
 
-data_spec_ho_SE_filtered<- collapsed_output_total_score_human_orang_SE %>% 
-  filter(event_id %in% astc_ho_SE_top$event_id) %>% 
-  group_by(current_snp, current_motif, Gene.name, source) %>% 
-  summarize(total_score = sum(score))%>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang,0),
-         human = replace_na(human,0),
-         species = "human_orang",
-         event_type = "SE",
-         cat = "species-specific") %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_spec_ho_SE<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_SE,
+                        species1="human",species2="orang", conservation_df=astc_ho_SE_top,
+                        conservation_status = "species-specific",
+                        filter=FALSE, event_type="SE")
+
+data_spec_ho_SE_filtered<- RBP_by_conservation(df=collapsed_output_total_score_human_orang_SE,
+                        species1="human",species2="orang", conservation_df=astc_ho_SE_top,
+                        conservation_status = "species-specific",
+                        filter=TRUE, event_type="SE")
+
+
 
 ```
 
 ```{r human orang SE SNV background, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
 
-data_d_ho_SE <- collapsed_output_total_score_human_orang_SE_SNV_bg %>% 
-  filter(score > 0) %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  dplyr::summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human, 0),
-         species = "human_orang",
-         event_type = "SE")
+data_d_ho_SE <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE_SNV_bg,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=FALSE, event_type="SE")
 
-data_d_ho_SE_filtered <- collapsed_output_total_score_human_orang_SE_SNV_bg %>% 
-  filter(score > 0) %>% 
-  mutate(human_ET = case_when(event_id %in% human_ASTC$V1 ~ "ASTC",
-                              event_id %in% human_AS$V1 ~ "AS",
-                              TRUE ~ "neither"),
-         orang_ET = case_when(event_id %in% orang_ASTC$V1 ~ "ASTC",
-                              event_id %in% orang_AS$V1 ~ "AS",
-                              TRUE ~ "neither")) %>% 
-  group_by(current_snp, current_motif, Gene.name, source, human_ET, orang_ET) %>% 
-  dplyr::summarize(total_score = sum(score)) %>% 
-  filter(human_ET == "AS" & orang_ET == "AS") %>% 
-  spread(source, total_score) %>% 
-  mutate(orang = replace_na(orang, 0),
-         human = replace_na(human, 0)) %>% 
-  mutate(diff = human-orang) %>% 
-  filter(diff > 2 | diff < -2)
+data_d_ho_SE_filtered <- RBP_by_event_type(df=collapsed_output_total_score_human_orang_SE_SNV_bg,
+                           species1="human",species2="orang", species1_ASTC=human_ASTC,
+                           species1_AS=human_AS, species1_event_type = "AS",
+                           species2_ASTC=orang_ASTC,species2_AS=orang_AS, species2_event_type = "AS",
+                           filter=TRUE, event_type="SE")
 
+```
 
+```{r summary table}
+rbp_table_long_ho_SE <- summary_table(rnacmpt_ids, data_a_ho_SE_filtered, data_b_ho_SE_filtered, data_c_ho_SE_filtered, data_d_ho_SE_filtered, data_cons_ho_SE_filtered, data_spec_ho_SE_filtered, "human","orang")
 ```
 
 
@@ -945,6 +546,8 @@ data_a_hc_AF_sig <- data_a_hc_AF %>%
   group_by(current_motif) %>% 
   left_join((subset(rbp_table_long_hc_AF, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
   select(-"Gene.name.y","type","count","total","chisq","frequency")
+
+data_a_hc_AF_sig <- add_sig_level(data_a_hc_AF, rbp_table)
 
 data_a_ho_AF_sig <- data_a_ho_AF %>% 
   group_by(current_motif) %>% 
