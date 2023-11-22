@@ -1,5 +1,5 @@
 ---
-title: "remap_interactive_rbp_scatter"
+title: "rbp_heatmaps"
 author: "juphilip"
 date: "3/22/2021"
 output: html_document
@@ -60,7 +60,8 @@ load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_eleme
 ```
 
 ```{r, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
-attach('~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF/hc_AF_ASTC_snp_lvl_prelim.RData', warn.conflicts = FALSE)
+attach('~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/human_chimp_AF/human_chimp_AF_variant_calling_data_SNP_level.RData', warn.conflicts = FALSE)
+
 
 collapsed_output_total_score_human_chimp_AF <- collapsed_output_total_score
 
@@ -75,12 +76,6 @@ collapsed_output_total_score_human_chimp_AF_SNV_bg <- collapsed_output_total_sco
 
 detach()
 ```
-
-```{r load background, eval=FALSE, echo = FALSE, warning=FALSE, error=FALSE, message=FALSE}
-
-load("~/Documents/05_results/01_primates/andrew_pipeline/remap_01_2020/cis_elements/march_21/summarized_rbp_bg.RData")
-```
-
 
 
 ```{r human chimp AF NA replace, echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
