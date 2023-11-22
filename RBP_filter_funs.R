@@ -144,5 +144,11 @@ summary_table <- function(rnacmpt_ids, data_a, data_b, data_c, data_d, data_cons
   
 }
 
+add_sig_level <- function(df, rbp_table){
+  result <- df %>% 
+    group_by(current_motif) %>% 
+    left_join((subset(rbp_table, type == "AS_ASTC_total")), by = c("current_motif" = "RBP")) %>% 
+    select(-"Gene.name.y","type","count","total","chisq","frequency")
+}
 
 
